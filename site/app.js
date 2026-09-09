@@ -14,7 +14,24 @@
   async function call(action, payload={}) {
     const body = {...payload, action, token: session?.token || null};
     const {data,error} = await client.functions.invoke('api',{body});
-    if(error) throw error;
+    if(error){
+      let detail = error?.message || 'Edge Function returned an error';
+      try {
+        const response = error?.context;
+        if(response && typeof response.clone === 'function'){
+          const raw = await response.clone().text();
+          if(raw){
+            try {
+              const parsed = JSON.parse(raw);
+              if(parsed?.error) detail = `${detail}: ${parsed.error}`;
+              else detail = `${detail}: ${raw}`;
+            } catch { detail = `${detail}: ${raw}`; }
+          }
+          detail += ` (HTTP ${response.status})`;
+        }
+      } catch (_) {}
+      throw new Error(detail);
+    }
     if(!data?.ok) throw new Error(data?.error || 'Unbekannter Fehler');
     return data;
   }
