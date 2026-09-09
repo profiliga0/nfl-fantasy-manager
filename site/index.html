@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NFL Fantasy Manager</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<div class="wrap">
+  <header class="hero">
+    <div>
+      <div class="eyebrow">4er Open League</div>
+      <h1>NFL Fantasy Manager</h1>
+      <p class="muted">Einfach aufstellen. Keine Drafts. 5 Einsätze je Auswahl.</p>
+    </div>
+    <div class="status" id="seasonStatus">Verbinde…</div>
+  </header>
+
+  <section id="authView" class="card grid2">
+    <div>
+      <h2>Neue Liga</h2>
+      <p class="muted">Für euch vier. Der Gründer erhält automatisch den ersten Platz.</p>
+      <input id="createLeagueName" placeholder="Liga-Name">
+      <input id="createManagerName" placeholder="Dein Name">
+      <input id="createPin" type="password" inputmode="numeric" maxlength="12" placeholder="Deine PIN">
+      <button id="createBtn">Liga erstellen</button>
+    </div>
+    <div>
+      <h2>Beitreten</h2>
+      <p class="muted">Liga-Code und deine persönliche PIN eingeben.</p>
+      <input id="joinCode" placeholder="Liga-Code" autocapitalize="characters">
+      <input id="joinName" placeholder="Dein Name">
+      <input id="joinPin" type="password" inputmode="numeric" maxlength="12" placeholder="Deine PIN">
+      <button id="joinBtn">Liga beitreten</button>
+    </div>
+    <div>
+      <h2>Wieder anmelden</h2>
+      <p class="muted">Zum Beispiel auf einem neuen Gerät.</p>
+      <input id="loginCode" placeholder="Liga-Code" autocapitalize="characters">
+      <input id="loginName" placeholder="Dein Name">
+      <input id="loginPin" type="password" inputmode="numeric" maxlength="12" placeholder="Deine PIN">
+      <button id="loginBtn">Anmelden</button>
+    </div>
+    <div class="full note">Tipp: Speichere den Link dieser Seite als Favorit. Jeder Mitspieler braucht nur seinen eigenen Namen + PIN und den Liga-Code.</div>
+  </section>
+
+  <main id="gameView" hidden>
+    <section class="topgrid">
+      <div class="card">
+        <div class="split"><div><div class="eyebrow">Liga</div><h2 id="leagueTitle">—</h2></div><button class="ghost" id="logoutBtn">Abmelden</button></div>
+        <div class="pillrow"><span class="pill">Code: <b id="leagueCode">—</b></span><span class="pill">Spieler: <b id="managerCount">0/4</b></span><span class="pill">Woche: <b id="weekNumber">—</b></span></div>
+      </div>
+      <div class="card lockcard">
+        <div class="eyebrow">Aufstellungsstatus</div>
+        <div id="lockText" class="locktext">—</div>
+        <div id="lockSub" class="muted">—</div>
+      </div>
+    </section>
+
+    <section class="grid2">
+      <div class="card">
+        <div class="split"><h2>Meine Aufstellung</h2><span id="saveState" class="muted"></span></div>
+        <div id="lineupForm"></div>
+        <button id="saveLineupBtn">Aufstellung speichern</button>
+      </div>
+      <div class="card">
+        <h2>Rangliste</h2>
+        <div id="leaderboard"></div>
+        <div class="tiny muted">Nach 18 Regular-Season-Wochen gewinnt die höchste Gesamtpunktzahl.</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="split"><div><h2>Aufstellungen</h2><div class="muted" id="lineupVisibility"></div></div><button class="ghost" id="refreshBtn">Aktualisieren</button></div>
+      <div id="otherLineups" class="lineups"></div>
+    </section>
+
+    <section class="card">
+      <div class="split"><h2>Spielerdaten</h2><span id="dataUpdated" class="muted">—</span></div>
+      <div id="playerPoolInfo" class="muted"></div>
+    </section>
+  </main>
+</div>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
