@@ -243,31 +243,68 @@ async function syncPlayersNow(){
   for(let i=0;i<rows.length;i+=500){const {error}=await db.from('players').upsert(rows.slice(i,i+500),{onConflict:'player_id'});if(error)throw error;}
   const t=TEAM_CODES_SYNC.map(code=>({code,name:code,updated_at:new Date().toISOString()})); await db.from('teams').upsert(t,{onConflict:'code'}); return rows.length;
 }
-function normalizeKickoff(value:any){
-  if(value==null) return null;
-  const d=new Date(value);
+function parseKickoff(value:any){
+  if(value===null||value===undefined||value==='') return null;
+  if(typeof value==='number'){
+    const ms = value > 2_000_000_000_000 ? value : value*1000;
+    const d = new Date(ms);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  const s=String(value).trim();
+  const d=new Date(s);
   if(Number.isNaN(d.getTime())) return null;
   return d.toISOString();
 }
-
+function normalizeNflTeamCode(value:any){
+  const raw=String(value||'').trim().toUpperCase();
+  if(!raw) return '';
+  const aliases:Record<string,string>={JAC:'JAX',LA:'LAR',LAR:'LAR',SD:'LAC',OAK:'LV',STL:'LAR'};
+  if(TEAM_CODES.includes(raw)) return raw;
+  if(aliases[raw]) return aliases[raw];
+  for(const [code,name] of Object.entries(TEAM_NAMES)){
+    if(String(name).toUpperCase()===raw) return code;
+  }
+  return raw;
+}
+function gameKey(away:any,home:any){
+  const a=normalizeNflTeamCode(away); const h=normalizeNflTeamCode(home);
+  return a && h ? `${a}|${h}` : '';
+}
+async function espnKickoffSchedule(season:number,week:number){
+  try{
+    const u=`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=${season}&seasontype=2&week=${week}`;
+    const r=await fetch(u,{headers:{accept:'application/json'},signal:AbortSignal.timeout(20000)});
+    if(!r.ok) return new Map<string,string>();
+    const j=await r.json();
+    const m=new Map<string,string>();
+    for(const e of (j?.events||[])){
+      const c=e?.competitions?.[0];
+      const kickoff=parseKickoff(e?.date||c?.date);
+      if(!kickoff) continue;
+      const competitors=Array.isArray(c?.competitors)?c.competitors:[];
+      const away=competitors.find((x:any)=>x?.homeAway==='away')?.team;
+      const home=competitors.find((x:any)=>x?.homeAway==='home')?.team;
+      const key=gameKey(away?.abbreviation||away?.shortDisplayName||away?.displayName,home?.abbreviation||home?.shortDisplayName||home?.displayName);
+      if(key) m.set(key,kickoff);
+    }
+    return m;
+  }catch(_){ return new Map<string,string>(); }
+}
 async function syncWeekNow(season:number,week:number){
-  // Use ESPN's published NFL scoreboard for the canonical kickoff timestamp.
-  // Sleeper remains the source for player/stat data. Keeping starts_at as a
-  // timestamptz in UTC means the UI can safely convert to Europe/Berlin and
-  // automatically handle CET/CEST daylight-saving changes.
-  const espn=await syncFetch([`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=${season}&seasontype=2&week=${week}`]);
-  const schedRows=(Array.isArray(espn?.events)?espn.events:[]).map((g:any)=>{
-    const c=g?.competitions?.[0];
-    const competitors=Array.isArray(c?.competitors)?c.competitors:[];
-    const home=competitors.find((x:any)=>x.homeAway==='home')?.team?.abbreviation;
-    const away=competitors.find((x:any)=>x.homeAway==='away')?.team?.abbreviation;
-    const startsAt=normalizeKickoff(g?.date || c?.date);
-    if(!g?.id || !home || !away || !startsAt) return null;
-    return {season,week,game_id:String(g.id),starts_at:startsAt,home,away,status:c?.status?.type?.state || g?.status?.type?.state || null};
-  }).filter(Boolean);
-  if(!schedRows.length) throw new Error(`Kein vollständiger Spielplan für NFL ${season}, Woche ${week} gefunden.`);
-  const {error}=await db.from('schedules').upsert(schedRows,{onConflict:'season,game_id'});
-  if(error)throw error;
+  const schedule=await syncFetch([`https://api.sleeper.app/schedule/nfl/regular/${season}`]);
+  const espnMap=await espnKickoffSchedule(season,week);
+  const schedRows=(Array.isArray(schedule)?schedule:[]).filter((g:any)=>Number(g.week)===week).map((g:any)=>{
+    const gameId=String(g.game_id);
+    // ESPN und Sleeper verwenden unterschiedliche Game-IDs. Deshalb wird die
+    // Kickoff-Zeit über Auswärts- und Heimteam zusammengeführt. Beide Quellen
+    // liefern den Zeitpunkt mit Zeitzoneninformation; parseKickoff() speichert
+    // ihn als eindeutigen UTC-Zeitpunkt. Es erfolgt keine manuelle US->AT-
+    // Umrechnung, damit die Sommer-/Winterzeit automatisch korrekt bleibt.
+    const kickoff=espnMap.get(gameKey(g.away,g.home)) || parseKickoff(g.date);
+    if(!kickoff) throw new Error(`Kein gültiger Kickoff für Spiel ${gameId}.`);
+    return {season,week,game_id:gameId,starts_at:kickoff,home:g.home,away:g.away,status:g.status||null};
+  });
+  if(schedRows.length){const {error}=await db.from('schedules').upsert(schedRows,{onConflict:'season,game_id'});if(error)throw error;}
   const stats=await syncFetch([`https://api.sleeper.app/v1/stats/nfl/regular/${season}/${week}`,`https://api.sleeper.com/stats/nfl/${season}/${week}?season_type=regular`]);
   const pRows:any[]=[];const team:any={};
   for(const [pid,row] of Object.entries(stats||{})){const x:any=row;const st=x.stats||x;const teamCode=x.team||st.team||null;if(!teamCode)continue;pRows.push({season,week,player_id:String(pid),team:teamCode,raw_stats:st,fantasy_points:indivPointsSync(st),updated_at:new Date().toISOString()});if(!team[teamCode])team[teamCode]=teamStatSync();const t=team[teamCode];
