@@ -230,8 +230,6 @@ async function saveLineup(manager:any,body:any){
   return {saved:true};
 }
 
-
-
 const TEAM_CODES_SYNC=['ARI','ATL','BAL','BUF','CAR','CHI','CIN','CLE','DAL','DEN','DET','GB','HOU','IND','JAX','KC','LAC','LAR','LV','MIA','MIN','NE','NO','NYG','NYJ','PHI','PIT','SF','SEA','TB','TEN','WAS'];
 function statNumSync(o:any,k:string){const v=Number(o?.[k]??0);return Number.isFinite(v)?v:0;}
 function teamStatSync(){return {pass_yards:0,pass_tds:0,pass_2pt:0,pass_fumbles:0,rush_yards:0,rush_tds:0,rush_2pt:0,rush_fumbles:0,rec_yards:0,rec_tds:0,def_points_allowed:0,def_interceptions:0,def_fumbles:0,sacks:0,safeties:0,def_tds:0,pats:0,fg_0_49:0,fg_50_plus:0,return_tds:0};}
@@ -243,68 +241,306 @@ async function syncPlayersNow(){
   for(let i=0;i<rows.length;i+=500){const {error}=await db.from('players').upsert(rows.slice(i,i+500),{onConflict:'player_id'});if(error)throw error;}
   const t=TEAM_CODES_SYNC.map(code=>({code,name:code,updated_at:new Date().toISOString()})); await db.from('teams').upsert(t,{onConflict:'code'}); return rows.length;
 }
-function parseKickoff(value:any){
-  if(value===null||value===undefined||value==='') return null;
-  if(typeof value==='number'){
-    const ms = value > 2_000_000_000_000 ? value : value*1000;
+
+function normalizeKickoff(value:any){
+  if(value===null || value===undefined || value==='') return null;
+
+  // Unix Timestamp: Sekunden oder Millisekunden
+  if(typeof value === 'number'){
+    const ms = value > 2_000_000_000_000 ? value : value * 1000;
     const d = new Date(ms);
     return Number.isNaN(d.getTime()) ? null : d.toISOString();
   }
-  const s=String(value).trim();
-  const d=new Date(s);
+
+  const s = String(value).trim();
+
+  // Ein reines Datum wie "2026-09-09" enthält keine Uhrzeit.
+  // Dieses darf niemals automatisch als 00:00 UTC interpretiert werden.
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+
+  const d = new Date(s);
   if(Number.isNaN(d.getTime())) return null;
+
   return d.toISOString();
 }
+
+// Kompatibilitäts-Alias für die bestehende Sync-Logik.
+const parseKickoff = normalizeKickoff;
+
+function matchupKey(home:any,away:any){
+  const h=String(home||'').toUpperCase().trim();
+  const a=String(away||'').toUpperCase().trim();
+  if(!h || !a) return '';
+  return [h,a].sort().join('|');
+}
+
 async function espnKickoffSchedule(season:number,week:number){
   try{
     const u=`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=${season}&seasontype=2&week=${week}`;
     const r=await fetch(u,{headers:{accept:'application/json'},signal:AbortSignal.timeout(20000)});
     if(!r.ok) return new Map<string,string>();
+
     const j=await r.json();
     const m=new Map<string,string>();
+
     for(const e of (j?.events||[])){
       const c=e?.competitions?.[0];
-      const id=String(e?.id||c?.id||'');
-      const kickoff=parseKickoff(e?.date||c?.date);
-      if(id && kickoff) m.set(id,kickoff);
+      if(!c) continue;
+
+      const competitors=c?.competitors||[];
+
+      const home=competitors.find(
+        (x:any)=>x?.homeAway==='home'
+      );
+
+      const away=competitors.find(
+        (x:any)=>x?.homeAway==='away'
+      );
+
+      const homeCode=String(
+        home?.team?.abbreviation||''
+      ).toUpperCase().trim();
+
+      const awayCode=String(
+        away?.team?.abbreviation||''
+      ).toUpperCase().trim();
+
+      const kickoff=parseKickoff(
+        e?.date||c?.date
+      );
+
+      if(!homeCode || !awayCode || !kickoff) continue;
+
+      const key=matchupKey(homeCode,awayCode);
+
+      if(key) m.set(key,kickoff);
     }
+
     return m;
-  }catch(_){ return new Map<string,string>(); }
+  }catch(_){
+    return new Map<string,string>();
+  }
 }
+
 async function syncWeekNow(season:number,week:number){
   const schedule=await syncFetch([`https://api.sleeper.app/schedule/nfl/regular/${season}`]);
   const espnMap=await espnKickoffSchedule(season,week);
-  const schedRows=(Array.isArray(schedule)?schedule:[]).filter((g:any)=>Number(g.week)===week).map((g:any)=>{
-    const gameId=String(g.game_id);
-    const kickoff=espnMap.get(gameId) || parseKickoff(g.date);
-    if(!kickoff) throw new Error(`Kein gültiger Kickoff für Spiel ${gameId}.`);
-    return {season,week,game_id:gameId,starts_at:kickoff,home:g.home,away:g.away,status:g.status||null};
-  });
-  if(schedRows.length){const {error}=await db.from('schedules').upsert(schedRows,{onConflict:'season,game_id'});if(error)throw error;}
-  const stats=await syncFetch([`https://api.sleeper.app/v1/stats/nfl/regular/${season}/${week}`,`https://api.sleeper.com/stats/nfl/${season}/${week}?season_type=regular`]);
-  const pRows:any[]=[];const team:any={};
-  for(const [pid,row] of Object.entries(stats||{})){const x:any=row;const st=x.stats||x;const teamCode=x.team||st.team||null;if(!teamCode)continue;pRows.push({season,week,player_id:String(pid),team:teamCode,raw_stats:st,fantasy_points:indivPointsSync(st),updated_at:new Date().toISOString()});if(!team[teamCode])team[teamCode]=teamStatSync();const t=team[teamCode];
-    t.pass_yards+=statNumSync(st,'pass_yd');t.pass_tds+=statNumSync(st,'pass_td');t.pass_2pt+=statNumSync(st,'pass_2pt');t.pass_fumbles+=statNumSync(st,'fum_lost');
-    t.rush_yards+=statNumSync(st,'rush_yd');t.rush_tds+=statNumSync(st,'rush_td');t.rush_2pt+=statNumSync(st,'rush_2pt');t.rush_fumbles+=statNumSync(st,'fum_lost');
-    t.rec_yards+=statNumSync(st,'rec_yd');t.rec_tds+=statNumSync(st,'rec_td');t.pats+=statNumSync(st,'xpm');t.fg_0_49+=statNumSync(st,'fgm_0_19')+statNumSync(st,'fgm_20_29')+statNumSync(st,'fgm_30_39')+statNumSync(st,'fgm_40_49');t.fg_50_plus+=statNumSync(st,'fgm_50p');t.return_tds+=statNumSync(st,'kr_td')+statNumSync(st,'pr_td')+statNumSync(st,'fum_td');t.def_interceptions+=statNumSync(st,'def_int')+statNumSync(st,'interception');t.def_fumbles+=statNumSync(st,'def_fum')+statNumSync(st,'fum_rec');t.sacks+=statNumSync(st,'def_sack')+statNumSync(st,'sack');t.safeties+=statNumSync(st,'safe');t.def_tds+=statNumSync(st,'def_td');t.def_points_allowed=Math.max(t.def_points_allowed,statNumSync(st,'pts_allow'));
+
+  const schedRows=(Array.isArray(schedule)?schedule:[])
+    .filter((g:any)=>Number(g.week)===week)
+    .map((g:any)=>{
+      const gameId=String(g.game_id||'');
+      const home=String(g.home||'').toUpperCase().trim();
+      const away=String(g.away||'').toUpperCase().trim();
+
+      // Partie über die Teams abgleichen, nicht über die externe Game-ID.
+      const matchup=matchupKey(home,away);
+
+      // Priorität:
+      // 1. Exakte ESPN-Kickoff-Zeit
+      // 2. Sleeper start_time
+      //
+      // Ein reines Datum wird von normalizeKickoff() abgelehnt.
+      const kickoff=espnMap.get(matchup) || normalizeKickoff(g.start_time);
+
+      if(!kickoff){
+        throw new Error(`Kein gültiger Kickoff für Spiel ${gameId} (${away} @ ${home}).`);
+      }
+
+      return {
+        season,
+        week,
+        game_id:gameId,
+        starts_at:kickoff,
+        home,
+        away,
+        status:g.status||null
+      };
+    });
+
+  if(schedRows.length){
+    const {error}=await db.from('schedules').upsert(schedRows,{onConflict:'season,game_id'});
+    if(error)throw error;
   }
-  for(let i=0;i<pRows.length;i+=500){const {error}=await db.from('weekly_player_stats').upsert(pRows.slice(i,i+500),{onConflict:'season,week,player_id'});if(error)throw error;}
-  const teamRows=TEAM_CODES_SYNC.filter(c=>team[c]).map(code=>({season,week,team:code,...team[code],updated_at:new Date().toISOString()}));if(teamRows.length){const {error}=await db.from('weekly_team_stats').upsert(teamRows,{onConflict:'season,week,team'});if(error)throw error;}
-  return {games:schedRows.length,players:pRows.length,teams:teamRows.length};
+
+  const stats=await syncFetch([
+    `https://api.sleeper.app/v1/stats/nfl/regular/${season}/${week}`,
+    `https://api.sleeper.com/stats/nfl/${season}/${week}?season_type=regular`
+  ]);
+
+  const pRows:any[]=[];
+  const team:any={};
+
+  for(const [pid,row] of Object.entries(stats||{})){
+    const x:any=row;
+    const st=x.stats||x;
+    const teamCode=x.team||st.team||null;
+    if(!teamCode)continue;
+
+    pRows.push({
+      season,
+      week,
+      player_id:String(pid),
+      team:teamCode,
+      raw_stats:st,
+      fantasy_points:indivPointsSync(st),
+      updated_at:new Date().toISOString()
+    });
+
+    if(!team[teamCode])team[teamCode]=teamStatSync();
+    const t=team[teamCode];
+
+    t.pass_yards+=statNumSync(st,'pass_yd');
+    t.pass_tds+=statNumSync(st,'pass_td');
+    t.pass_2pt+=statNumSync(st,'pass_2pt');
+    t.pass_fumbles+=statNumSync(st,'fum_lost');
+
+    t.rush_yards+=statNumSync(st,'rush_yd');
+    t.rush_tds+=statNumSync(st,'rush_td');
+    t.rush_2pt+=statNumSync(st,'rush_2pt');
+    t.rush_fumbles+=statNumSync(st,'fum_lost');
+
+    t.rec_yards+=statNumSync(st,'rec_yd');
+    t.rec_tds+=statNumSync(st,'rec_td');
+
+    t.pats+=statNumSync(st,'xpm');
+
+    t.fg_0_49+=
+      statNumSync(st,'fgm_0_19')+
+      statNumSync(st,'fgm_20_29')+
+      statNumSync(st,'fgm_30_39')+
+      statNumSync(st,'fgm_40_49');
+
+    t.fg_50_plus+=statNumSync(st,'fgm_50p');
+
+    t.return_tds+=
+      statNumSync(st,'kr_td')+
+      statNumSync(st,'pr_td')+
+      statNumSync(st,'fum_td');
+
+    t.def_interceptions+=
+      statNumSync(st,'def_int')+
+      statNumSync(st,'interception');
+
+    t.def_fumbles+=
+      statNumSync(st,'def_fum')+
+      statNumSync(st,'fum_rec');
+
+    t.sacks+=
+      statNumSync(st,'def_sack')+
+      statNumSync(st,'sack');
+
+    t.safeties+=statNumSync(st,'safe');
+    t.def_tds+=statNumSync(st,'def_td');
+
+    t.def_points_allowed=
+      Math.max(
+        t.def_points_allowed,
+        statNumSync(st,'pts_allow')
+      );
+  }
+
+  for(let i=0;i<pRows.length;i+=500){
+    const {error}=await db
+      .from('weekly_player_stats')
+      .upsert(
+        pRows.slice(i,i+500),
+        {onConflict:'season,week,player_id'}
+      );
+    if(error)throw error;
+  }
+
+  const teamRows=TEAM_CODES_SYNC
+    .filter(c=>team[c])
+    .map(code=>({
+      season,
+      week,
+      team:code,
+      ...team[code],
+      updated_at:new Date().toISOString()
+    }));
+
+  if(teamRows.length){
+    const {error}=await db
+      .from('weekly_team_stats')
+      .upsert(
+        teamRows,
+        {onConflict:'season,week,team'}
+      );
+    if(error)throw error;
+  }
+
+  return {
+    games:schedRows.length,
+    players:pRows.length,
+    teams:teamRows.length
+  };
 }
-async function runSync(job:string){const s=await syncFetch(['https://api.sleeper.app/v1/state/nfl']);const season=Number(s.season),week=Number(s.week);const out:any={season,week};if(job==='players'||job==='all')out.players=await syncPlayersNow();if(job==='weekly'||job==='all'){out.current=await syncWeekNow(season,week);if(week>1)out.previous=await syncWeekNow(season,week-1);}await db.from('app_meta').upsert({key:'last_sync',value:out,updated_at:new Date().toISOString()},{onConflict:'key'});return out;}
+
+async function runSync(job:string){
+  const s=await syncFetch(['https://api.sleeper.app/v1/state/nfl']);
+  const season=Number(s.season),week=Number(s.week);
+  const out:any={season,week};
+  if(job==='players'||job==='all')out.players=await syncPlayersNow();
+  if(job==='weekly'||job==='all'){
+    out.current=await syncWeekNow(season,week);
+    if(week>1)out.previous=await syncWeekNow(season,week-1);
+  }
+  await db.from('app_meta').upsert(
+    {key:'last_sync',value:out,updated_at:new Date().toISOString()},
+    {onConflict:'key'}
+  );
+  return out;
+}
 
 Deno.serve(async (req) => {
   if(req.method==='OPTIONS') return new Response('ok',{headers});
+
   try{
-    const body=await req.json(); const action=String(body.action||'');
-    if(action==='create_league') return json({ok:true,...await createLeague(body)});
-    if(action==='join_league') return json({ok:true,...await joinLeague(body)});
-    if(action==='login') return json({ok:true,...await login(body)});
-    if(action==='sync'){ const secret=Deno.env.get('SYNC_SECRET')||''; if(!secret || (req.headers.get('x-sync-secret')||'')!==secret) return err('Nicht autorisiert.',401); return json({ok:true,result:await runSync(String(body.job||'weekly'))}); }
+    const body=await req.json();
+    const action=String(body.action||'');
+
+    if(action==='create_league')
+      return json({ok:true,...await createLeague(body)});
+
+    if(action==='join_league')
+      return json({ok:true,...await joinLeague(body)});
+
+    if(action==='login')
+      return json({ok:true,...await login(body)});
+
+    if(action==='sync'){
+      const secret=Deno.env.get('SYNC_SECRET')||'';
+      if(!secret || (req.headers.get('x-sync-secret')||'')!==secret)
+        return err('Nicht autorisiert.',401);
+
+      return json({
+        ok:true,
+        result:await runSync(String(body.job||'weekly'))
+      });
+    }
+
     const manager=await getSession(String(body.token||''));
-    if(action==='state') return json({ok:true,state:await getLeagueState(manager)});
-    if(action==='save_lineup') return json({ok:true,...await saveLineup(manager,body)});
+
+    if(action==='state')
+      return json({
+        ok:true,
+        state:await getLeagueState(manager)
+      });
+
+    if(action==='save_lineup')
+      return json({
+        ok:true,
+        ...await saveLineup(manager,body)
+      });
+
     return err('Unbekannte Aktion.',404);
-  }catch(e){ console.error(e); return err(e instanceof Error?e.message:String(e),400); }
+
+  }catch(e){
+    console.error(e);
+    return err(
+      e instanceof Error ? e.message : String(e),
+      400
+    );
+  }
 });
