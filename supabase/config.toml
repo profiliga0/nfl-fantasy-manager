@@ -1,2 +1,4 @@
 [functions.api]
 verify_jwt = false
+
+# NFL Fantasy Manager API
