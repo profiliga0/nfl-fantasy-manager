@@ -49,7 +49,7 @@
 
   async function loadState(){
     const d = await call('state');
-    state=d.state; pool=d.pool;
+    state=d.state; pool=d.state?.pool || null;
     render();
   }
 
@@ -70,7 +70,7 @@
     el('lockSub').textContent=locked?`Gestartet am ${new Date(s.first_game_at).toLocaleString('de-DE')}:00`:`Erstes Spiel: ${new Date(s.first_game_at).toLocaleString('de-DE')}`;
     el('lineupVisibility').textContent=locked?'Alle vier Aufstellungen sind jetzt sichtbar.':'Die Aufstellungen der anderen werden bis zum ersten Kickoff verborgen.';
     el('dataUpdated').textContent=s.data_last_synced_at ? `Daten: ${new Date(s.data_last_synced_at).toLocaleString('de-DE')}` : 'Daten werden geladen';
-    el('playerPoolInfo').textContent=`${pool.players.length} Spieler mit aktuellem NFL-Team · ${pool.teams.length} Teams`;
+    el('playerPoolInfo').textContent=pool?`${pool.players.length} Spieler mit aktuellem NFL-Team · ${pool.teams.length} Teams`:'Spielerdaten werden geladen';
     renderForm(); renderLeaderboard(); renderOtherLineups();
     el('saveLineupBtn').disabled=locked;
     if(locked && s.my_lineup?.auto_copied) el('saveState').textContent='Vorwoche wurde automatisch übernommen';
