@@ -270,25 +270,31 @@ function gameKey(away:any,home:any){
   const a=normalizeNflTeamCode(away); const h=normalizeNflTeamCode(home);
   return a && h ? `${a}|${h}` : '';
 }
-async function espnKickoffSchedule(season:number,week:number){
-  try{
-    const u=`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=${season}&seasontype=2&week=${week}`;
-    const r=await fetch(u,{headers:{accept:'application/json'},signal:AbortSignal.timeout(20000)});
-    if(!r.ok) return new Map<string,string>();
-    const j=await r.json();
-    const m=new Map<string,string>();
-    for(const e of (j?.events||[])){
-      const c=e?.competitions?.[0];
-      const kickoff=parseKickoff(e?.date||c?.date);
-      if(!kickoff) continue;
-      const competitors=Array.isArray(c?.competitors)?c.competitors:[];
-      const away=competitors.find((x:any)=>x?.homeAway==='away')?.team;
-      const home=competitors.find((x:any)=>x?.homeAway==='home')?.team;
-      const key=gameKey(away?.abbreviation||away?.shortDisplayName||away?.displayName,home?.abbreviation||home?.shortDisplayName||home?.displayName);
-      if(key) m.set(key,kickoff);
-    }
-    return m;
-  }catch(_){ return new Map<string,string>(); }
+async async function espnKickoffSchedule(season:number,week:number){
+  const urls=[
+    `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?season=${season}&seasontype=2&week=${week}`,
+    `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=${season}&seasontype=2&week=${week}`
+  ];
+  for(const u of urls){
+    try{
+      const r=await fetch(u,{headers:{accept:'application/json'},signal:AbortSignal.timeout(20000)});
+      if(!r.ok) continue;
+      const j=await r.json();
+      const m=new Map<string,string>();
+      for(const e of (j?.events||[])){
+        const c=e?.competitions?.[0];
+        const kickoff=parseKickoff(e?.date||c?.date);
+        if(!kickoff) continue;
+        const competitors=Array.isArray(c?.competitors)?c.competitors:[];
+        const away=competitors.find((x:any)=>x?.homeAway==='away')?.team;
+        const home=competitors.find((x:any)=>x?.homeAway==='home')?.team;
+        const key=gameKey(away?.abbreviation||away?.shortDisplayName||away?.displayName,home?.abbreviation||home?.shortDisplayName||home?.displayName);
+        if(key) m.set(key,kickoff);
+      }
+      if(m.size) return m;
+    }catch(_){}
+  }
+  return new Map<string,string>();
 }
 async function syncWeekNow(season:number,week:number){
   const schedule=await syncFetch([`https://api.sleeper.app/schedule/nfl/regular/${season}`]);
@@ -300,7 +306,7 @@ async function syncWeekNow(season:number,week:number){
     // liefern den Zeitpunkt mit Zeitzoneninformation; parseKickoff() speichert
     // ihn als eindeutigen UTC-Zeitpunkt. Es erfolgt keine manuelle US->AT-
     // Umrechnung, damit die Sommer-/Winterzeit automatisch korrekt bleibt.
-    const kickoff=espnMap.get(gameKey(g.away,g.home)) || parseKickoff(g.date);
+    const kickoff=espnMap.get(gameKey(g.away,g.home));
     if(!kickoff) throw new Error(`Kein gültiger Kickoff für Spiel ${gameId}.`);
     return {season,week,game_id:gameId,starts_at:kickoff,home:g.home,away:g.away,status:g.status||null};
   });
