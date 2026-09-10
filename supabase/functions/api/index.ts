@@ -270,7 +270,7 @@ function gameKey(away:any,home:any){
   const a=normalizeNflTeamCode(away); const h=normalizeNflTeamCode(home);
   return a && h ? `${a}|${h}` : '';
 }
-async async function espnKickoffSchedule(season:number,week:number){
+async function espnKickoffSchedule(season:number,week:number){
   const urls=[
     `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?season=${season}&seasontype=2&week=${week}`,
     `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=${season}&seasontype=2&week=${week}`
