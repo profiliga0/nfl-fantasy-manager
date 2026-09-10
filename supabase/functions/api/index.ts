@@ -270,6 +270,50 @@ function gameKey(away:any,home:any){
   const a=normalizeNflTeamCode(away); const h=normalizeNflTeamCode(home);
   return a && h ? `${a}|${h}` : '';
 }
+function csvRow(line:string){
+  const out:string[]=[]; let cur=''; let quoted=false;
+  for(let i=0;i<line.length;i++){
+    const ch=line[i];
+    if(ch==='"'){
+      if(quoted && line[i+1]==='"'){cur+='"'; i++;}
+      else quoted=!quoted;
+    }else if(ch===',' && !quoted){out.push(cur);cur='';}
+    else cur+=ch;
+  }
+  out.push(cur); return out;
+}
+function easternOffsetForNflDate(date:string){
+  // NFL regular-season games are Sep-Jan: EDT in Sep/Oct, EST from Nov-Jan.
+  const month=Number(date.slice(5,7));
+  return month>=3 && month<=10 ? '-04:00' : '-05:00';
+}
+async function nflverseKickoffSchedule(season:number,week:number){
+  try{
+    const u='https://raw.githubusercontent.com/nflverse/nfldata/master/data/games.csv';
+    const r=await fetch(u,{headers:{accept:'text/csv'},signal:AbortSignal.timeout(30000)});
+    if(!r.ok) return new Map<string,string>();
+    const text=await r.text();
+    const lines=text.split(/\r?\n/);
+    if(!lines.length) return new Map<string,string>();
+    const header=csvRow(lines[0]);
+    const idx:any={}; header.forEach((h,i)=>idx[h]=i);
+    const m=new Map<string,string>();
+    for(let i=1;i<lines.length;i++){
+      if(!lines[i]) continue;
+      const row=csvRow(lines[i]);
+      if(Number(row[idx.season])!==season || Number(row[idx.week])!==week || String(row[idx.game_type]||'')!=='REG') continue;
+      const away=normalizeNflTeamCode(row[idx.away_team]);
+      const home=normalizeNflTeamCode(row[idx.home_team]);
+      const gameday=String(row[idx.gameday]||'').trim();
+      const gametime=String(row[idx.gametime]||'').trim();
+      if(!away || !home || !/^\d{4}-\d{2}-\d{2}$/.test(gameday) || !/^\d{2}:\d{2}$/.test(gametime)) continue;
+      const d=new Date(`${gameday}T${gametime}:00${easternOffsetForNflDate(gameday)}`);
+      if(Number.isNaN(d.getTime())) continue;
+      m.set(`${away}|${home}`,d.toISOString());
+    }
+    return m;
+  }catch(_){ return new Map<string,string>(); }
+}
 async function espnKickoffSchedule(season:number,week:number){
   const urls=[
     `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?season=${season}&seasontype=2&week=${week}`,
@@ -292,13 +336,14 @@ async function espnKickoffSchedule(season:number,week:number){
         if(key) m.set(key,kickoff);
       }
       if(m.size) return m;
-    }catch(_){}
+    }catch(_){ }
   }
   return new Map<string,string>();
 }
 async function syncWeekNow(season:number,week:number){
   const schedule=await syncFetch([`https://api.sleeper.app/schedule/nfl/regular/${season}`]);
-  const espnMap=await espnKickoffSchedule(season,week);
+  const nflverseMap=await nflverseKickoffSchedule(season,week);
+  const espnMap=nflverseMap.size ? new Map<string,string>() : await espnKickoffSchedule(season,week);
   const schedRows=(Array.isArray(schedule)?schedule:[]).filter((g:any)=>Number(g.week)===week).map((g:any)=>{
     const gameId=String(g.game_id);
     // ESPN und Sleeper verwenden unterschiedliche Game-IDs. Deshalb wird die
@@ -306,7 +351,7 @@ async function syncWeekNow(season:number,week:number){
     // liefern den Zeitpunkt mit Zeitzoneninformation; parseKickoff() speichert
     // ihn als eindeutigen UTC-Zeitpunkt. Es erfolgt keine manuelle US->AT-
     // Umrechnung, damit die Sommer-/Winterzeit automatisch korrekt bleibt.
-    const kickoff=espnMap.get(gameKey(g.away,g.home));
+    const kickoff=nflverseMap.get(gameKey(g.away,g.home)) || espnMap.get(gameKey(g.away,g.home));
     if(!kickoff) throw new Error(`Kein gültiger Kickoff für Spiel ${gameId}.`);
     return {season,week,game_id:gameId,starts_at:kickoff,home:g.home,away:g.away,status:g.status||null};
   });
