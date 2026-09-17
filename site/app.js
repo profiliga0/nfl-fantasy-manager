@@ -459,21 +459,64 @@
 
   // Event-Delegation: Die Listener bleiben auch dann aktiv, wenn
   // renderForm() die Select-Elemente neu erzeugt.
-  el('lineupForm').addEventListener('change', event => {
-    const target = event.target;
+  function updateCaptainOptions() {
+  const captainSelect = el('captainChoice');
 
-    if (!(target instanceof HTMLSelectElement)) {
-      return;
-    }
+  if (!captainSelect) {
+    return;
+  }
 
-    markLineupDirty();
+  const l = currentLineup();
+  const previousCaptain = l.captain || '';
 
-    if (target.id === 'captainChoice') {
-      draftLineup.captain = target.value || null;
-    } else if (target.dataset.key) {
-      draftLineup[target.dataset.key] = target.value || null;
-    }
-  });
+  const options = [
+    '<option value="">Bitte auswählen</option>'
+  ];
+
+  if (l.QB) {
+    options.push(
+      `<option value="QB" ${
+        previousCaptain === 'QB' ? 'selected' : ''
+      }>Quarterback</option>`
+    );
+  }
+
+  if (l.RB) {
+    options.push(
+      `<option value="RB" ${
+        previousCaptain === 'RB' ? 'selected' : ''
+      }>Running Back</option>`
+    );
+  }
+
+  if (l.WR) {
+    options.push(
+      `<option value="WR" ${
+        previousCaptain === 'WR' ? 'selected' : ''
+      }>Wide Receiver</option>`
+    );
+  }
+
+  captainSelect.innerHTML = options.join('');
+}
+
+el('lineupForm').addEventListener('change', event => {
+  const target = event.target;
+
+  if (!(target instanceof HTMLSelectElement)) {
+    return;
+  }
+
+  markLineupDirty();
+
+  if (target.id === 'captainChoice') {
+    draftLineup.captain = target.value || null;
+  } else if (target.dataset.key) {
+    draftLineup[target.dataset.key] = target.value || null;
+  }
+
+  updateCaptainOptions();
+});
 
   el('saveLineupBtn').addEventListener('click', saveLineup);
 
