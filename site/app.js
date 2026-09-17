@@ -181,6 +181,21 @@
       `NFL ${s.season} · Woche ${s.week}`;
 
     el('leagueTitle').textContent = s.league.name;
+
+    // Aktiven Manager direkt neben dem Liganamen anzeigen.
+    // Das Element wird hier erzeugt, damit keine Änderung an index.html nötig ist.
+    let activeManager = document.getElementById('activeManagerName');
+    if (!activeManager) {
+      activeManager = document.createElement('span');
+      activeManager.id = 'activeManagerName';
+      activeManager.className = 'muted';
+      activeManager.style.marginLeft = '12px';
+      activeManager.style.fontSize = '0.85em';
+      activeManager.style.fontWeight = 'normal';
+      el('leagueTitle').insertAdjacentElement('afterend', activeManager);
+    }
+    activeManager.textContent = s.me?.name ? `Spieler: ${s.me.name}` : '';
+
     el('leagueCode').textContent = s.league.code;
     el('managerCount').textContent = `${s.managers.length}/4`;
     el('weekNumber').textContent = s.week;
