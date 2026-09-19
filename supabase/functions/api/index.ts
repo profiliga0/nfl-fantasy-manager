@@ -131,7 +131,7 @@ async function scoreLineup(lineup:any,season:number,week:number){
   if(!lineup) return {points:0,details:{}};
   const {data:ps}=await db.from('weekly_player_stats').select('player_id,fantasy_points').eq('season',season).eq('week',week).in('player_id',[lineup.qb,lineup.rb,lineup.wr].filter(Boolean));
   const pm:any={}; for(const p of ps||[])pm[p.player_id]=Number(p.fantasy_points||0);
-  const {data:ts}=await db.from('weekly_team_stats').select('*').eq('season',season).in('team',[lineup.pass_team,lineup.rush_team,lineup.defense_team,lineup.st_team].filter(Boolean));
+  const {data:ts}=await db.from('weekly_team_stats').select('*').eq('season',season).eq('week',week).in('team',[lineup.pass_team,lineup.rush_team,lineup.defense_team,lineup.st_team].filter(Boolean));
   const tm:any={}; for(const t of ts||[])tm[t.team]=t;
   const parts:any={QB:pm[lineup.qb]||0,RB:pm[lineup.rb]||0,WR:pm[lineup.wr]||0,PASS:tm[lineup.pass_team]?passingPoints(tm[lineup.pass_team]):0,RUSH:tm[lineup.rush_team]?rushingPoints(tm[lineup.rush_team]):0,DEF:tm[lineup.defense_team]?defensePoints(tm[lineup.defense_team]):0,ST:tm[lineup.st_team]?stPoints(tm[lineup.st_team]):0};
   let total=Object.values(parts).reduce((a:any,b:any)=>a+Number(b||0),0);
@@ -356,11 +356,11 @@ async function syncWeekNow(season:number,week:number){
     return {season,week,game_id:gameId,starts_at:kickoff,home:g.home,away:g.away,status:g.status||null};
   });
   if(schedRows.length){const {error}=await db.from('schedules').upsert(schedRows,{onConflict:'season,game_id'});if(error)throw error;}
-  const stats=await syncFetch([`https://api.sleeper.app/v1/stats/nfl/regular/${season}/${week}`,`https://api.sleeper.com/stats/nfl/${season}/${week}?season_type=regular`]);
+  const stats=await syncFetch([`https://api.sleeper.com/stats/nfl/${season}/${week}?season_type=regular`,`https://api.sleeper.app/v1/stats/nfl/regular/${season}/${week}`]);
   const pRows:any[]=[];const team:any={};
-  for(const [pid,row] of Object.entries(stats||{})){const x:any=row;const st=x.stats||x;const teamCode=x.team||st.team||null;if(!teamCode)continue;pRows.push({season,week,player_id:String(pid),team:teamCode,raw_stats:st,fantasy_points:indivPointsSync(st),updated_at:new Date().toISOString()});if(!team[teamCode])team[teamCode]=teamStatSync();const t=team[teamCode];
-    t.pass_yards+=statNumSync(st,'pass_yd');t.pass_tds+=statNumSync(st,'pass_td');t.pass_2pt+=statNumSync(st,'pass_2pt');t.pass_fumbles+=statNumSync(st,'fum_lost');
-    t.rush_yards+=statNumSync(st,'rush_yd');t.rush_tds+=statNumSync(st,'rush_td');t.rush_2pt+=statNumSync(st,'rush_2pt');t.rush_fumbles+=statNumSync(st,'fum_lost');
+  for(const [pid,row] of Object.entries(stats||{})){const x:any=row;const st=x.stats||x;const key=String(pid);const isTeamRow=key.startsWith('TEAM_');const teamCode=normalizeNflTeamCode(x.team||st.team||(isTeamRow?key.slice(5):''));if(!teamCode)continue;if(!isTeamRow)pRows.push({season,week,player_id:key,team:teamCode,raw_stats:st,fantasy_points:Number.isFinite(Number(st.pts_std))?Number(st.pts_std):indivPointsSync(st),updated_at:new Date().toISOString()});if(!team[teamCode])team[teamCode]=teamStatSync();const t=team[teamCode];
+    t.pass_yards+=statNumSync(st,'pass_yd');t.pass_tds+=statNumSync(st,'pass_td');t.pass_2pt+=statNumSync(st,'pass_2pt');if(!isTeamRow)t.pass_fumbles+=statNumSync(st,'fum_lost');
+    t.rush_yards+=statNumSync(st,'rush_yd');t.rush_tds+=statNumSync(st,'rush_td');t.rush_2pt+=statNumSync(st,'rush_2pt');if(!isTeamRow)t.rush_fumbles+=statNumSync(st,'fum_lost');
     t.rec_yards+=statNumSync(st,'rec_yd');t.rec_tds+=statNumSync(st,'rec_td');t.pats+=statNumSync(st,'xpm');t.fg_0_49+=statNumSync(st,'fgm_0_19')+statNumSync(st,'fgm_20_29')+statNumSync(st,'fgm_30_39')+statNumSync(st,'fgm_40_49');t.fg_50_plus+=statNumSync(st,'fgm_50p');t.return_tds+=statNumSync(st,'kr_td')+statNumSync(st,'pr_td')+statNumSync(st,'fum_td');t.def_interceptions+=statNumSync(st,'def_int')+statNumSync(st,'interception');t.def_fumbles+=statNumSync(st,'def_fum')+statNumSync(st,'fum_rec');t.sacks+=statNumSync(st,'def_sack')+statNumSync(st,'sack');t.safeties+=statNumSync(st,'safe');t.def_tds+=statNumSync(st,'def_td');t.def_points_allowed=Math.max(t.def_points_allowed,statNumSync(st,'pts_allow'));
   }
   for(let i=0;i<pRows.length;i+=500){const {error}=await db.from('weekly_player_stats').upsert(pRows.slice(i,i+500),{onConflict:'season,week,player_id'});if(error)throw error;}
