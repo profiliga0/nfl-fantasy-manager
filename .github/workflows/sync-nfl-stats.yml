@@ -1,0 +1,25 @@
+name: Sync NFL Stats
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync current and previous NFL week
+        env:
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_SYNC_SECRET: ${{ secrets.SUPABASE_SYNC_SECRET }}
+        run: |
+          set -euo pipefail
+          URL="https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/api"
+          RESPONSE="$(curl --fail-with-body --silent --show-error \
+            -X POST "$URL" \
+            -H "Content-Type: application/json" \
+            -H "x-sync-secret: ${SUPABASE_SYNC_SECRET}" \
+            --data '{"action":"sync","job":"weekly"}')"
+          echo "$RESPONSE"
