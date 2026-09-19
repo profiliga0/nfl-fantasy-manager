@@ -375,6 +375,25 @@
     ).join('');
   }
 
+  function renderPointsBreakdown(m) {
+    const d = m.details || {};
+    const captain = m.display?.captain;
+    return `
+      <div class="points-breakdown">
+        <strong>Punkte nach Position:</strong>
+        QB ${pct(Number(d.QB || 0) + Number(d.QB_captain_bonus || 0))} ·
+        RB ${pct(Number(d.RB || 0) + Number(d.RB_captain_bonus || 0))} ·
+        WR ${pct(Number(d.WR || 0) + Number(d.WR_captain_bonus || 0))} ·
+        PASS ${pct(d.PASS)} ·
+        RUSH ${pct(d.RUSH)} ·
+        DEF ${pct(d.DEF)} ·
+        ST ${pct(d.ST)}
+        <br>
+        <span class="tiny">Kapitän: ${escapeHtml(captain || '—')} · Captain-Bonus bereits eingerechnet</span>
+      </div>
+    `;
+  }
+
   function renderOtherLineups() {
     const list = state.visible_lineups || [];
 
@@ -400,6 +419,7 @@
           ST: ${escapeHtml(m.display.ST)}<br>
           Kapitän: ${escapeHtml(m.display.captain)}
         </div>
+        ${renderPointsBreakdown(m)}
       </div>`
     ).join('');
   }
