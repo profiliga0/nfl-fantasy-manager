@@ -168,7 +168,7 @@ async function getLeagueState(manager:any){
     const {data:ls}=await db.from('lineups').select('*').eq('league_id',leagueId).eq('season',ctx.season).eq('week',week);
     for(const l of ls||[]){
       const mgr=(managers||[]).find(x=>x.id===l.manager_id); const sc=await scoreLineup(l,ctx.season,week); const display=await lookupNames(l);
-      visibleLineups.push({name:mgr?.name||'—',points:sc.points,display,auto_copied:l.auto_copied});
+      visibleLineups.push({name:mgr?.name||'—',points:sc.points,details:sc.details,display,auto_copied:l.auto_copied});
     }
   }
   const {data:lastSync}=await db.from('app_meta').select('value,updated_at').eq('key','last_sync').maybeSingle();
