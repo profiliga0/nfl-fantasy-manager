@@ -591,5 +591,5 @@ el('lineupForm').addEventListener('change', event => {
     if (session && !lineupDirty) {
       loadState().catch(() => {});
     }
-  }, 60000);
+  }, 15000);
 })();
