@@ -152,6 +152,7 @@ async function getLeagueState(manager:any){
   const {data:managers}=await db.from('managers').select('id,name').eq('league_id',leagueId).order('created_at',{ascending:true});
   const {data:mine}=await db.from('lineups').select('*').eq('league_id',leagueId).eq('manager_id',manager.id).eq('season',ctx.season).eq('week',week).maybeSingle();
   const myLineup=mine?{QB:mine.qb,RB:mine.rb,WR:mine.wr,PASS:mine.pass_team,RUSH:mine.rush_team,DEF:mine.defense_team,ST:mine.st_team,captain:mine.captain,auto_copied:mine.auto_copied,submitted_at:mine.submitted_at}:emptyLineup();
+  const myScore=await scoreLineup(mine,ctx.season,week);
   const usage=await getUsage(leagueId,manager.id,ctx.season);
 
   const totals:any={};
@@ -175,7 +176,7 @@ async function getLeagueState(manager:any){
   const {data:players}=await db.from('players').select('player_id,name,position,team,active,fantasy_positions').in('position',['QB','RB','WR']).not('team','is',null).limit(5000);
   const playerList=(players||[]).map(p=>({player_id:p.player_id,name:p.name,position:p.position,team:p.team,active:p.active}));
   const teams=TEAM_CODES.map(code=>({code,name:TEAM_NAMES[code]}));
-  return {league:{id:league.id,name:league.name,code:league.code},season:ctx.season,week,first_game_at:firstAt,is_locked:locked,managers,me:{id:manager.id,name:manager.name},my_lineup:myLineup,usage,leaderboard,visible_lineups:visibleLineups,pool:{players:playerList,teams},data_last_synced_at:lastSync?.updated_at||null};
+  return {league:{id:league.id,name:league.name,code:league.code},season:ctx.season,week,first_game_at:firstAt,is_locked:locked,managers,me:{id:manager.id,name:manager.name},my_lineup:myLineup,my_week_points:myScore.points,my_week_details:myScore.details,usage,leaderboard,visible_lineups:visibleLineups,pool:{players:playerList,teams},data_last_synced_at:lastSync?.updated_at||null};
 }
 
 async function createLeague(body:any){
