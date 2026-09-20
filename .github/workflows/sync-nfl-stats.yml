@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'supabase/functions/api/index.ts'
+      - '.github/workflows/sync-nfl-stats.yml'
   workflow_dispatch:
   schedule:
     - cron: '*/5 * * * *'
