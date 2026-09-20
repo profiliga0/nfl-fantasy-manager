@@ -139,6 +139,28 @@ async function scoreLineup(lineup:any,season:number,week:number){
   return {points:total,details:parts};
 }
 
+async function refreshLiveStatsIfDue(season:number,week:number){
+  const nowMs=Date.now();
+  const {data}=await db.from('app_meta').select('updated_at').eq('key','live_stats_sync').maybeSingle();
+  const lastMs=data?.updated_at ? new Date(data.updated_at).getTime() : 0;
+  if(Number.isFinite(lastMs) && nowMs-lastMs<20000) return;
+  try{
+    const result=await syncWeekNow(season,week);
+    await db.from('app_meta').upsert({
+      key:'live_stats_sync',
+      value:{season,week,...result},
+      updated_at:new Date().toISOString()
+    },{onConflict:'key'});
+    await db.from('app_meta').upsert({
+      key:'last_sync',
+      value:{season,week,live:true,...result},
+      updated_at:new Date().toISOString()
+    },{onConflict:'key'});
+  }catch(e){
+    console.error('Live-Stats-Sync fehlgeschlagen',e);
+  }
+}
+
 async function getLeagueState(manager:any){
   await ensureData();
   const leagueId=manager.league_id;
@@ -148,6 +170,7 @@ async function getLeagueState(manager:any){
   const firstAt=await firstGameAt(ctx.season,week);
   const locked=!!firstAt && new Date(firstAt)<=now();
   await materializeLocks(leagueId,ctx.season,week,firstAt);
+  if(locked) await refreshLiveStatsIfDue(ctx.season,week);
 
   const {data:managers}=await db.from('managers').select('id,name').eq('league_id',leagueId).order('created_at',{ascending:true});
   const {data:mine}=await db.from('lineups').select('*').eq('league_id',leagueId).eq('manager_id',manager.id).eq('season',ctx.season).eq('week',week).maybeSingle();
@@ -357,7 +380,7 @@ async function syncWeekNow(season:number,week:number){
     return {season,week,game_id:gameId,starts_at:kickoff,home:g.home,away:g.away,status:g.status||null};
   });
   if(schedRows.length){const {error}=await db.from('schedules').upsert(schedRows,{onConflict:'season,game_id'});if(error)throw error;}
-  const stats=await syncFetch([`https://api.sleeper.com/stats/nfl/${season}/${week}?season_type=regular`,`https://api.sleeper.app/v1/stats/nfl/regular/${season}/${week}`]);
+  const stats=await syncFetch([`https://api.sleeper.app/v1/stats/nfl/regular/${season}/${week}`,`https://api.sleeper.com/stats/nfl/${season}/${week}?season_type=regular`]);
   const pRows:any[]=[];const team:any={};const teamSummary:any={};
   for(const [pid,row] of Object.entries(stats||{})){
     const x:any=row; const st=x.stats||x; const key=String(pid);
@@ -373,7 +396,7 @@ async function syncWeekNow(season:number,week:number){
     // Never add both sources, otherwise team offense/defense is double-counted.
     pRows.push({
       season,week,player_id:key,team:teamCode||null,raw_stats:st,
-      fantasy_points:Number.isFinite(Number(st.pts_std))?Number(st.pts_std):indivPointsSync(st),
+      fantasy_points:indivPointsSync(st),
       updated_at:new Date().toISOString()
     });
     if(!teamCode) continue;
