@@ -230,6 +230,23 @@
 
     el('saveLineupBtn').disabled = locked;
 
+    const myDetails = s.my_week_details || {};
+    const myBreakdown = document.getElementById('myPointsBreakdown');
+    if (myBreakdown) {
+      myBreakdown.innerHTML = `
+        <div class="points-breakdown">
+          <strong>Meine Punkte nach Position:</strong>
+          QB ${pct(Number(myDetails.QB || 0) + Number(myDetails.QB_captain_bonus || 0))} ·
+          RB ${pct(Number(myDetails.RB || 0) + Number(myDetails.RB_captain_bonus || 0))} ·
+          WR ${pct(Number(myDetails.WR || 0) + Number(myDetails.WR_captain_bonus || 0))} ·
+          PASS ${pct(myDetails.PASS)} ·
+          RUSH ${pct(myDetails.RUSH)} ·
+          DEF ${pct(myDetails.DEF)} ·
+          ST ${pct(myDetails.ST)}
+          <br><span class="tiny">Captain-Bonus bereits eingerechnet</span>
+        </div>`;
+    }
+
     if (locked && s.my_lineup?.auto_copied) {
       el('saveState').textContent =
         'Vorwoche wurde automatisch übernommen';
