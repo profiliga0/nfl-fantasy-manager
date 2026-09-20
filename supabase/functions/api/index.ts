@@ -358,13 +358,13 @@ async function syncWeekNow(season:number,week:number){
   });
   if(schedRows.length){const {error}=await db.from('schedules').upsert(schedRows,{onConflict:'season,game_id'});if(error)throw error;}
   const stats=await syncFetch([`https://api.sleeper.com/stats/nfl/${season}/${week}?season_type=regular`,`https://api.sleeper.app/v1/stats/nfl/regular/${season}/${week}`]);
-  const pRows:any[]=[];const team:any={};const teamRows:any={};
+  const pRows:any[]=[];const team:any={};const teamSummary:any={};
   for(const [pid,row] of Object.entries(stats||{})){
     const x:any=row; const st=x.stats||x; const key=String(pid);
     const isTeamRow=key.startsWith('TEAM_');
     const teamCode=normalizeNflTeamCode(x.team||st.team||(isTeamRow?key.slice(5):''));
     if(isTeamRow){
-      if(teamCode) teamRows[teamCode]={...st};
+      if(teamCode) teamSummary[teamCode]={...st};
       continue;
     }
 
@@ -388,9 +388,9 @@ async function syncWeekNow(season:number,week:number){
   // Use a TEAM_* value only when the corresponding individual-player
   // aggregation has no value. This is a fallback, not an addition.
   const teamStatKeys=['pass_yards','pass_tds','pass_2pt','pass_fumbles','rush_yards','rush_tds','rush_2pt','rush_fumbles','rec_yards','rec_tds','pats','fg_0_49','fg_50_plus','return_tds','def_interceptions','def_fumbles','sacks','safeties','def_tds'];
-  for(const code of Object.keys(teamRows)){
+  for(const code of Object.keys(teamSummary)){
     if(!team[code]) team[code]=teamStatSync();
-    const t=team[code]; const s=teamRows[code];
+    const t=team[code]; const s=teamSummary[code];
     if(!Number(t.pass_yards)) t.pass_yards=statNumSync(s,'pass_yd');
     if(!Number(t.pass_tds)) t.pass_tds=statNumSync(s,'pass_td');
     if(!Number(t.pass_2pt)) t.pass_2pt=statNumSync(s,'pass_2pt');
