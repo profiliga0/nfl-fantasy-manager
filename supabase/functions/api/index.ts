@@ -93,7 +93,7 @@ function statNum(o:any,key:string){ const n=Number(o?.[key]??0); return Number.i
 function individualPoints(st:any){
   return statNum(st,'pass_yd')/25 + statNum(st,'rush_yd')/10 + statNum(st,'rec_yd')/10 + 6*(statNum(st,'pass_td')+statNum(st,'rush_td')+statNum(st,'rec_td')) + 2*(statNum(st,'pass_2pt')+statNum(st,'rush_2pt')+statNum(st,'rec_2pt')) - 2*(statNum(st,'fum_lost')+statNum(st,'pass_int'));
 }
-function passingPoints(t:any){ return statNum(t,'pass_yards')/25 + statNum(t,'rec_yards')/10 + 6*statNum(t,'pass_tds') + 2*statNum(t,'pass_2pt') - 2*statNum(t,'pass_fumbles'); }
+function passingPoints(t:any){ return statNum(t,'pass_yards')/25 + statNum(t,'rec_yards')/25 + 6*statNum(t,'pass_tds') + 2*statNum(t,'pass_2pt') - 2*statNum(t,'pass_fumbles'); }
 function rushingPoints(t:any){ return statNum(t,'rush_yards')/10 + 6*statNum(t,'rush_tds') + 2*statNum(t,'rush_2pt') - 2*statNum(t,'rush_fumbles'); }
 function defensePoints(t:any){
   const pa=statNum(t,'def_points_allowed'); const base=pa===0?10:(pa<=9?6:(pa<=20?3:0));
