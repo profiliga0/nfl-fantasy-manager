@@ -93,7 +93,7 @@ function statNum(o:any,key:string){ const n=Number(o?.[key]??0); return Number.i
 function individualPoints(st:any){
   return statNum(st,'pass_yd')/25 + statNum(st,'rush_yd')/10 + statNum(st,'rec_yd')/10 + 6*(statNum(st,'pass_td')+statNum(st,'rush_td')+statNum(st,'rec_td')) + 2*(statNum(st,'pass_2pt')+statNum(st,'rush_2pt')+statNum(st,'rec_2pt')) - 2*(statNum(st,'fum_lost')+statNum(st,'pass_int'));
 }
-function passingPoints(t:any){ return statNum(t,'pass_yards')/25 + 6*statNum(t,'pass_tds') + 2*statNum(t,'pass_2pt') - 2*statNum(t,'pass_fumbles'); }
+function passingPoints(t:any){ return statNum(t,'pass_yards')/25 + statNum(t,'rec_yards')/10 + 6*statNum(t,'pass_tds') + 2*statNum(t,'pass_2pt') - 2*statNum(t,'pass_fumbles'); }
 function rushingPoints(t:any){ return statNum(t,'rush_yards')/10 + 6*statNum(t,'rush_tds') + 2*statNum(t,'rush_2pt') - 2*statNum(t,'rush_fumbles'); }
 function defensePoints(t:any){
   const pa=statNum(t,'def_points_allowed'); const base=pa===0?10:(pa<=9?6:(pa<=20?3:0));
@@ -358,26 +358,61 @@ async function syncWeekNow(season:number,week:number){
   });
   if(schedRows.length){const {error}=await db.from('schedules').upsert(schedRows,{onConflict:'season,game_id'});if(error)throw error;}
   const stats=await syncFetch([`https://api.sleeper.com/stats/nfl/${season}/${week}?season_type=regular`,`https://api.sleeper.app/v1/stats/nfl/regular/${season}/${week}`]);
-  const pRows:any[]=[];const team:any={};
+  const pRows:any[]=[];const team:any={};const teamRows:any={};
   for(const [pid,row] of Object.entries(stats||{})){
     const x:any=row; const st=x.stats||x; const key=String(pid);
     const isTeamRow=key.startsWith('TEAM_');
     const teamCode=normalizeNflTeamCode(x.team||st.team||(isTeamRow?key.slice(5):''));
-    // Keep individual player rows even when Sleeper omits the team field.
-    if(!isTeamRow){
-      pRows.push({
-        season,week,player_id:key,team:teamCode||null,raw_stats:st,
-        fantasy_points:Number.isFinite(Number(st.pts_std))?Number(st.pts_std):indivPointsSync(st),
-        updated_at:new Date().toISOString()
-      });
+    if(isTeamRow){
+      if(teamCode) teamRows[teamCode]={...st};
+      continue;
     }
+
+    // Team-wide scoring is built from the individual player rows.
+    // Sleeper may also return TEAM_* summary rows containing the same values.
+    // Never add both sources, otherwise team offense/defense is double-counted.
+    pRows.push({
+      season,week,player_id:key,team:teamCode||null,raw_stats:st,
+      fantasy_points:Number.isFinite(Number(st.pts_std))?Number(st.pts_std):indivPointsSync(st),
+      updated_at:new Date().toISOString()
+    });
     if(!teamCode) continue;
+
     if(!team[teamCode]) team[teamCode]=teamStatSync();
     const t=team[teamCode];
-    t.pass_yards+=statNumSync(st,'pass_yd');t.pass_tds+=statNumSync(st,'pass_td');t.pass_2pt+=statNumSync(st,'pass_2pt');if(!isTeamRow)t.pass_fumbles+=statNumSync(st,'fum_lost');
-    t.rush_yards+=statNumSync(st,'rush_yd');t.rush_tds+=statNumSync(st,'rush_td');t.rush_2pt+=statNumSync(st,'rush_2pt');if(!isTeamRow)t.rush_fumbles+=statNumSync(st,'fum_lost');
+    t.pass_yards+=statNumSync(st,'pass_yd');t.pass_tds+=statNumSync(st,'pass_td');t.pass_2pt+=statNumSync(st,'pass_2pt');t.pass_fumbles+=statNumSync(st,'fum_lost');
+    t.rush_yards+=statNumSync(st,'rush_yd');t.rush_tds+=statNumSync(st,'rush_td');t.rush_2pt+=statNumSync(st,'rush_2pt');t.rush_fumbles+=statNumSync(st,'fum_lost');
     t.rec_yards+=statNumSync(st,'rec_yd');t.rec_tds+=statNumSync(st,'rec_td');t.pats+=statNumSync(st,'xpm');t.fg_0_49+=statNumSync(st,'fgm_0_19')+statNumSync(st,'fgm_20_29')+statNumSync(st,'fgm_30_39')+statNumSync(st,'fgm_40_49');t.fg_50_plus+=statNumSync(st,'fgm_50p');t.return_tds+=statNumSync(st,'kr_td')+statNumSync(st,'pr_td')+statNumSync(st,'fum_td');t.def_interceptions+=statNumSync(st,'def_int')+statNumSync(st,'interception');t.def_fumbles+=statNumSync(st,'def_fum')+statNumSync(st,'fum_rec');t.sacks+=statNumSync(st,'def_sack')+statNumSync(st,'sack');t.safeties+=statNumSync(st,'safe');t.def_tds+=statNumSync(st,'def_td');t.def_points_allowed=Math.max(t.def_points_allowed,statNumSync(st,'pts_allow'));
   }
+
+  // Use a TEAM_* value only when the corresponding individual-player
+  // aggregation has no value. This is a fallback, not an addition.
+  const teamStatKeys=['pass_yards','pass_tds','pass_2pt','pass_fumbles','rush_yards','rush_tds','rush_2pt','rush_fumbles','rec_yards','rec_tds','pats','fg_0_49','fg_50_plus','return_tds','def_interceptions','def_fumbles','sacks','safeties','def_tds'];
+  for(const code of Object.keys(teamRows)){
+    if(!team[code]) team[code]=teamStatSync();
+    const t=team[code]; const s=teamRows[code];
+    if(!Number(t.pass_yards)) t.pass_yards=statNumSync(s,'pass_yd');
+    if(!Number(t.pass_tds)) t.pass_tds=statNumSync(s,'pass_td');
+    if(!Number(t.pass_2pt)) t.pass_2pt=statNumSync(s,'pass_2pt');
+    if(!Number(t.pass_fumbles)) t.pass_fumbles=statNumSync(s,'fum_lost');
+    if(!Number(t.rush_yards)) t.rush_yards=statNumSync(s,'rush_yd');
+    if(!Number(t.rush_tds)) t.rush_tds=statNumSync(s,'rush_td');
+    if(!Number(t.rush_2pt)) t.rush_2pt=statNumSync(s,'rush_2pt');
+    if(!Number(t.rush_fumbles)) t.rush_fumbles=statNumSync(s,'fum_lost');
+    if(!Number(t.rec_yards)) t.rec_yards=statNumSync(s,'rec_yd');
+    if(!Number(t.rec_tds)) t.rec_tds=statNumSync(s,'rec_td');
+    if(!Number(t.pats)) t.pats=statNumSync(s,'xpm');
+    if(!Number(t.fg_0_49)) t.fg_0_49=statNumSync(s,'fgm_0_19')+statNumSync(s,'fgm_20_29')+statNumSync(s,'fgm_30_39')+statNumSync(s,'fgm_40_49');
+    if(!Number(t.fg_50_plus)) t.fg_50_plus=statNumSync(s,'fgm_50p');
+    if(!Number(t.return_tds)) t.return_tds=statNumSync(s,'kr_td')+statNumSync(s,'pr_td')+statNumSync(s,'fum_td');
+    if(!Number(t.def_interceptions)) t.def_interceptions=statNumSync(s,'def_int')+statNumSync(s,'interception');
+    if(!Number(t.def_fumbles)) t.def_fumbles=statNumSync(s,'def_fum')+statNumSync(s,'fum_rec');
+    if(!Number(t.sacks)) t.sacks=statNumSync(s,'def_sack')+statNumSync(s,'sack');
+    if(!Number(t.safeties)) t.safeties=statNumSync(s,'safe');
+    if(!Number(t.def_tds)) t.def_tds=statNumSync(s,'def_td');
+    t.def_points_allowed=Math.max(Number(t.def_points_allowed||0),statNumSync(s,'pts_allow'));
+  }
+
   for(let i=0;i<pRows.length;i+=500){const {error}=await db.from('weekly_player_stats').upsert(pRows.slice(i,i+500),{onConflict:'season,week,player_id'});if(error)throw error;}
   const teamRows=TEAM_CODES_SYNC.filter(c=>team[c]).map(code=>({season,week,team:code,...team[code],updated_at:new Date().toISOString()}));if(teamRows.length){const {error}=await db.from('weekly_team_stats').upsert(teamRows,{onConflict:'season,week,team'});if(error)throw error;}
   return {games:schedRows.length,players:pRows.length,teams:teamRows.length};
