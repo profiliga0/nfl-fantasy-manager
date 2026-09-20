@@ -1,6 +1,10 @@
 name: Sync NFL Stats
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/api/index.ts'
   workflow_dispatch:
   schedule:
     - cron: '*/5 * * * *'
