@@ -99,7 +99,7 @@ function defensePoints(t:any){
   const pa=statNum(t,'def_points_allowed'); const base=pa===0?10:(pa<=9?6:(pa<=20?3:0));
   return base + 2*(statNum(t,'def_interceptions')+statNum(t,'def_fumbles')) + statNum(t,'sacks') + 2*statNum(t,'safeties') + 6*statNum(t,'def_tds');
 }
-function stPoints(t:any){ return 2*statNum(t,'pats') + 3*statNum(t,'fg_0_49') + 5*statNum(t,'fg_50_plus') + 6*statNum(t,'return_tds'); }
+function stPoints(t:any){ return 1*statNum(t,'pats') + 3*statNum(t,'fg_0_49') + 5*statNum(t,'fg_50_plus') + 6*statNum(t,'return_tds'); }
 
 async function getUsage(leagueId:string,managerId:string,season:number){
   const {data,error}=await db.from('lineups').select('qb,rb,wr,pass_team,rush_team,defense_team,st_team').eq('league_id',leagueId).eq('manager_id',managerId).eq('season',season);
