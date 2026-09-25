@@ -405,7 +405,7 @@ async function syncWeekNow(season:number,week:number){
     const t=team[teamCode];
     t.pass_yards+=statNumSync(st,'pass_yd');t.pass_tds+=statNumSync(st,'pass_td');t.pass_2pt+=statNumSync(st,'pass_2pt');t.pass_fumbles+=statNumSync(st,'fum_lost');
     t.rush_yards+=statNumSync(st,'rush_yd');t.rush_tds+=statNumSync(st,'rush_td');t.rush_2pt+=statNumSync(st,'rush_2pt');t.rush_fumbles+=statNumSync(st,'fum_lost');
-    t.rec_yards+=statNumSync(st,'rec_yd');t.rec_tds+=statNumSync(st,'rec_td');t.pats+=statNumSync(st,'xpm');const fgm=statNumSync(st,'fgm');const fgm50=statNumSync(st,'fgm_50p');if(Object.prototype.hasOwnProperty.call(st,'fgm')){t.fg_0_49+=Math.max(0,fgm-fgm50);t.fg_50_plus+=fgm50;}else{t.fg_0_49+=statNumSync(st,'fgm_0_19')+statNumSync(st,'fgm_20_29')+statNumSync(st,'fgm_30_39')+statNumSync(st,'fgm_40_49');t.fg_50_plus+=fgm50;}t.return_tds+=statNumSync(st,'kr_td')+statNumSync(st,'pr_td')+statNumSync(st,'fum_td');t.def_interceptions+=statNumSync(st,'def_int')+statNumSync(st,'interception');t.def_fumbles+=statNumSync(st,'def_fum')+statNumSync(st,'fum_rec');t.sacks+=statNumSync(st,'def_sack')+statNumSync(st,'sack');t.safeties+=statNumSync(st,'safe');t.def_tds+=statNumSync(st,'def_td');t.def_points_allowed=Math.max(t.def_points_allowed,statNumSync(st,'pts_allow'));
+    t.rec_yards+=statNumSync(st,'rec_yd');t.rec_tds+=statNumSync(st,'rec_td');const xpm=statNumSync(st,'xpm');const fgm50=statNumSync(st,'fgm_50p');const kickPts=statNumSync(st,'kick_pts');const fgm=statNumSync(st,'fgm');t.pats+=xpm;if(kickPts||fgm||fgm50){t.fg_50_plus+=fgm50;const under50=kickPts?Math.max(0,(kickPts-xpm-3*fgm50)/3):Math.max(0,fgm-fgm50);t.fg_0_49+=under50;}t.return_tds+=statNumSync(st,'kr_td')+statNumSync(st,'pr_td')+statNumSync(st,'fum_td');t.def_interceptions+=statNumSync(st,'def_int')+statNumSync(st,'interception');t.def_fumbles+=statNumSync(st,'def_fum')+statNumSync(st,'fum_rec');t.sacks+=statNumSync(st,'def_sack')+statNumSync(st,'sack');t.safeties+=statNumSync(st,'safe');t.def_tds+=statNumSync(st,'def_td');t.def_points_allowed=Math.max(t.def_points_allowed,statNumSync(st,'pts_allow'));
   }
 
   // Use a TEAM_* value only when the corresponding individual-player
@@ -425,7 +425,7 @@ async function syncWeekNow(season:number,week:number){
     if(!Number(t.rec_yards)) t.rec_yards=statNumSync(s,'rec_yd');
     if(!Number(t.rec_tds)) t.rec_tds=statNumSync(s,'rec_td');
     if(!Number(t.pats)) t.pats=statNumSync(s,'xpm');
-    if(!Number(t.fg_0_49) && !Number(t.fg_50_plus)) { const fgm=statNumSync(s,'fgm'); const fgm50=statNumSync(s,'fgm_50p'); if(Object.prototype.hasOwnProperty.call(s,'fgm')) { t.fg_0_49=Math.max(0,fgm-fgm50); t.fg_50_plus=fgm50; } else { t.fg_0_49=statNumSync(s,'fgm_0_19')+statNumSync(s,'fgm_20_29')+statNumSync(s,'fgm_30_39')+statNumSync(s,'fgm_40_49'); t.fg_50_plus=fgm50; } }
+    if(!Number(t.fg_0_49) && !Number(t.fg_50_plus)) { const xpm=statNumSync(s,'xpm'); const fgm=statNumSync(s,'fgm'); const fgm50=statNumSync(s,'fgm_50p'); const kickPts=statNumSync(s,'kick_pts'); t.fg_50_plus=fgm50; if(kickPts) t.fg_0_49=Math.max(0,(kickPts-xpm-3*fgm50)/3); else if(fgm) t.fg_0_49=Math.max(0,fgm-fgm50); else t.fg_0_49=statNumSync(s,'fgm_40_49'); }
     if(!Number(t.return_tds)) t.return_tds=statNumSync(s,'kr_td')+statNumSync(s,'pr_td')+statNumSync(s,'fum_td');
     if(!Number(t.def_interceptions)) t.def_interceptions=statNumSync(s,'def_int')+statNumSync(s,'interception');
     if(!Number(t.def_fumbles)) t.def_fumbles=statNumSync(s,'def_fum')+statNumSync(s,'fum_rec');
