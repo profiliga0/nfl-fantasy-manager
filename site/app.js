@@ -244,7 +244,6 @@
           DEF ${pct(myDetails.DEF)} ·
           ST ${pct(myDetails.ST)}
           <br><span class="tiny">Captain-Bonus bereits eingerechnet</span>
-          ${scoringDetailHtml(myDetails, s.my_week_breakdown || {})}
         </div>`;
     }
 
@@ -393,28 +392,6 @@
     ).join('');
   }
 
-  function scoringDetailHtml(d, b) {
-    d = d || {}; b = b || {};
-    const n = x => Number(x || 0);
-    const player = (slot) => {
-      const x=b[slot]||{};
-      const td=n(x.pass_tds)+n(x.rush_tds)+n(x.rec_tds);
-      const neg=n(x.fumbles)+n(x.interceptions);
-      return `<div class="tiny"><strong>${slot}:</strong> Pass ${n(x.pass_yards)}÷25 + Rush ${n(x.rush_yards)}÷10 + Rec ${n(x.rec_yards)}÷10 + TD ${td}×6 + 2PT ${n(x.two_pt)}×2 − Fum/INT ${neg}×2 = <strong>${pct(d[slot])}</strong></div>`;
-    };
-    const p=b.PASS||{}, r=b.RUSH||{}, df=b.DEF||{}, st=b.ST||{};
-    const pa=n(df.points_allowed);
-    const defBase=pa===0?10:(pa>=2&&pa<=9?6:(pa>=10&&pa<=20?3:0));
-    return `
-      <div class="score-details">
-        ${player('QB')}${player('RB')}${player('WR')}
-        <div class="tiny"><strong>PASS:</strong> ${n(p.pass_yards)}÷25 + TD ${n(p.pass_tds)}×6 + 2PT ${n(p.two_pt)}×2 − Fumble ${n(p.fumbles)}×2 = <strong>${pct(d.PASS)}</strong></div>
-        <div class="tiny"><strong>RUSH:</strong> ${n(r.rush_yards)}÷10 + TD ${n(r.rush_tds)}×6 + 2PT ${n(r.two_pt)}×2 − Fumble ${n(r.fumbles)}×2 = <strong>${pct(d.RUSH)}</strong></div>
-        <div class="tiny"><strong>DEF:</strong> PA ${pa} → ${defBase} + INT ${n(df.interceptions)}×2 + FR ${n(df.fumble_recoveries)}×2 + Sack ${n(df.sacks)} + Safety ${n(df.safeties)}×2 + TD ${n(df.tds)}×6 = <strong>${pct(d.DEF)}</strong></div>
-        <div class="tiny"><strong>ST:</strong> PAT ${n(st.pats)}×2 + FG 0–49 ${n(st.fg_0_49)}×3 + FG 50+ ${n(st.fg_50_plus)}×5 + Return-TD ${n(st.return_tds)}×6 = <strong>${pct(d.ST)}</strong></div>
-      </div>`;
-  }
-
   function renderPointsBreakdown(m) {
     const d = m.details || {};
     const captain = m.display?.captain;
@@ -430,7 +407,6 @@
         ST ${pct(d.ST)}
         <br>
         <span class="tiny">Kapitän: ${escapeHtml(captain || '—')} · Captain-Bonus bereits eingerechnet</span>
-        ${scoringDetailHtml(d, m.breakdown || {})}
       </div>
     `;
   }
