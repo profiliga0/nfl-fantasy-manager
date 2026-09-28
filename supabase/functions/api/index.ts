@@ -285,7 +285,7 @@ async function saveLineup(manager:any,body:any){
   if(!PLAYER_SLOTS.every(k=>l[k]))throw new Error('QB, RB und WR müssen belegt sein.');
   const {data:ps}=await db.from('players').select('player_id,position,team').in('player_id',[l.QB,l.RB,l.WR]);
   for(const slot of PLAYER_SLOTS){ const p=(ps||[]).find(x=>x.player_id===l[slot]); if(!p || p.position!==slot)throw new Error(`${slot} Auswahl ist ungültig oder nicht mehr aktuell.`); }
-  for(const k of TEAM_SLOTS){ if(!TEAM_CODES.includes(l[k]))throw new Error(`${k} Team ist ungültig.`); }
+  for(const k of TEAM_SLOTS){ if(!TEAM_CODES_SYNC.includes(l[k]))throw new Error(`${k} Team ist ungültig.`); }
   if(new Set([l.PASS,l.RUSH,l.DEF,l.ST]).size!==4)throw new Error('Passing Offense, Rushing Offense, Defense und Special Teams müssen vier verschiedene Teams sein.');
   const usage=await getUsage(manager.league_id,manager.id,ctx.season);
   for(const k of ALL_SLOTS){ const v=l[k]; const old=(await db.from('lineups').select('*').eq('league_id',manager.league_id).eq('manager_id',manager.id).eq('season',ctx.season).eq('week',ctx.week).maybeSingle()).data; const oldVal=old?({QB:old.qb,RB:old.rb,WR:old.wr,PASS:old.pass_team,RUSH:old.rush_team,DEF:old.defense_team,ST:old.st_team} as any)[k]:null; const projected=(usage as any)[k]?.[v]||0; const alreadyCounted=oldVal===v?1:0; if(projected-alreadyCounted>=5) throw new Error(`${labelsFromSlot(k)} / ${TEAM_NAMES[v]||v} wurde bereits 5-mal eingesetzt.`); }
@@ -324,7 +324,7 @@ function normalizeNflTeamCode(value:any){
   const raw=String(value||'').trim().toUpperCase();
   if(!raw) return '';
   const aliases:Record<string,string>={JAC:'JAX',LA:'LAR',LAR:'LAR',SD:'LAC',OAK:'LV',STL:'LAR'};
-  if(TEAM_CODES.includes(raw)) return raw;
+  if(TEAM_CODES_SYNC.includes(raw)) return raw;
   if(aliases[raw]) return aliases[raw];
   for(const [code,name] of Object.entries(TEAM_NAMES)){
     if(String(name).toUpperCase()===raw) return code;
@@ -447,7 +447,7 @@ async function nflverseWeeklyTeamExtras(season:number,week:number){
       if(Number(row[idx.season])!==season || Number(row[idx.week])!==week) continue;
       if(idx.season_type!=null && String(row[idx.season_type]||'').toUpperCase()!=='REG') continue;
       const code=normalizeNflTeamCode(row[idx.team]);
-      if(!code || !TEAM_CODES.includes(code)) continue;
+      if(!code || !TEAM_CODES_SYNC.includes(code)) continue;
       out[code]={
         def_interceptions:num(row,'def_interceptions'),
         def_fumbles:num(row,'fumble_recovery_opp'),
@@ -519,7 +519,7 @@ async function syncWeekNow(season:number,week:number){
     // Treat both forms as team summaries; otherwise SEA/DEN/etc. are mistaken for
     // player IDs and DEF/ST team statistics silently remain zero.
     const keyTeamCode=normalizeNflTeamCode(key.startsWith('TEAM_') ? key.slice(5) : key);
-    const isTeamRow=key.startsWith('TEAM_') || TEAM_CODES.includes(keyTeamCode);
+    const isTeamRow=key.startsWith('TEAM_') || TEAM_CODES_SYNC.includes(keyTeamCode);
     const teamCode=normalizeNflTeamCode(x.team||st.team||(isTeamRow?keyTeamCode:''));
     if(isTeamRow){
       if(teamCode) teamSummary[teamCode]={...st};
