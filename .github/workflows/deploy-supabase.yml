@@ -31,3 +31,18 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: supabase functions deploy api --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}"
+      - name: Sync NFL stats after deploy
+        env:
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_SYNC_SECRET: ${{ secrets.SUPABASE_SYNC_SECRET }}
+        run: |
+          set -euo pipefail
+          URL="https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/api"
+          TMP="$(mktemp)"
+          HTTP_CODE="$(curl --silent --show-error             -o "$TMP"             -w "%{http_code}"             -X POST "$URL"             -H "Content-Type: application/json"             -H "x-sync-secret: ${SUPABASE_SYNC_SECRET}"             --data '{"action":"sync","job":"weekly"}')"
+          cat "$TMP"
+          echo
+          echo "HTTP $HTTP_CODE"
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            exit 1
+          fi
