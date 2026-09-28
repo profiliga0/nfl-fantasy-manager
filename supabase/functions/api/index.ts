@@ -135,15 +135,42 @@ async function lookupNames(lineup:any){
 function labelsFromSlot(k:string){ return ({QB:'Quarterback',RB:'Running Back',WR:'Wide Receiver'} as any)[k]||k; }
 
 async function scoreLineup(lineup:any,season:number,week:number){
-  if(!lineup) return {points:0,details:{}};
-  const {data:ps}=await db.from('weekly_player_stats').select('player_id,fantasy_points').eq('season',season).eq('week',week).in('player_id',[lineup.qb,lineup.rb,lineup.wr].filter(Boolean));
-  const pm:any={}; for(const p of ps||[])pm[p.player_id]=Number(p.fantasy_points||0);
+  if(!lineup) return {points:0,details:{},breakdown:{}};
+  const {data:ps}=await db.from('weekly_player_stats').select('player_id,fantasy_points,raw_stats').eq('season',season).eq('week',week).in('player_id',[lineup.qb,lineup.rb,lineup.wr].filter(Boolean));
+  const pm:any={}; const pr:any={};
+  for(const p of ps||[]){ pm[p.player_id]=Number(p.fantasy_points||0); pr[p.player_id]=p.raw_stats||{}; }
   const {data:ts}=await db.from('weekly_team_stats').select('*').eq('season',season).eq('week',week).in('team',[lineup.pass_team,lineup.rush_team,lineup.defense_team,lineup.st_team].filter(Boolean));
   const tm:any={}; for(const t of ts||[])tm[t.team]=t;
-  const parts:any={QB:pm[lineup.qb]||0,RB:pm[lineup.rb]||0,WR:pm[lineup.wr]||0,PASS:tm[lineup.pass_team]?passingPoints(tm[lineup.pass_team]):0,RUSH:tm[lineup.rush_team]?rushingPoints(tm[lineup.rush_team]):0,DEF:tm[lineup.defense_team]?defensePoints(tm[lineup.defense_team]):0,ST:tm[lineup.st_team]?stPoints(tm[lineup.st_team]):0};
+  const parts:any={
+    QB:pm[lineup.qb]||0,RB:pm[lineup.rb]||0,WR:pm[lineup.wr]||0,
+    PASS:tm[lineup.pass_team]?passingPoints(tm[lineup.pass_team]):0,
+    RUSH:tm[lineup.rush_team]?rushingPoints(tm[lineup.rush_team]):0,
+    DEF:tm[lineup.defense_team]?defensePoints(tm[lineup.defense_team]):0,
+    ST:tm[lineup.st_team]?stPoints(tm[lineup.st_team]):0
+  };
+  const playerBreakdown=(id:any)=>{
+    const st=pr[id]||{};
+    return {
+      pass_yards:statNumSync(st,'pass_yd'),rush_yards:statNumSync(st,'rush_yd'),rec_yards:statNumSync(st,'rec_yd'),
+      pass_tds:statNumSync(st,'pass_td'),rush_tds:statNumSync(st,'rush_td'),rec_tds:statNumSync(st,'rec_td'),
+      two_pt:statNumSync(st,'pass_2pt')+statNumSync(st,'rush_2pt')+statNumSync(st,'rec_2pt'),
+      fumbles:statNumSync(st,'fum_lost'),interceptions:statNumSync(st,'pass_int')
+    };
+  };
+  const pass=tm[lineup.pass_team]||{}; const rush=tm[lineup.rush_team]||{}; const def=tm[lineup.defense_team]||{}; const st=tm[lineup.st_team]||{};
+  const breakdown:any={
+    QB:playerBreakdown(lineup.qb),RB:playerBreakdown(lineup.rb),WR:playerBreakdown(lineup.wr),
+    PASS:{pass_yards:statNum(pass,'pass_yards'),pass_tds:statNum(pass,'pass_tds'),two_pt:statNum(pass,'pass_2pt'),fumbles:statNum(pass,'pass_fumbles')},
+    RUSH:{rush_yards:statNum(rush,'rush_yards'),rush_tds:statNum(rush,'rush_tds'),two_pt:statNum(rush,'rush_2pt'),fumbles:statNum(rush,'rush_fumbles')},
+    DEF:{points_allowed:statNum(def,'def_points_allowed'),interceptions:statNum(def,'def_interceptions'),fumble_recoveries:statNum(def,'def_fumbles'),sacks:statNum(def,'sacks'),safeties:statNum(def,'safeties'),tds:statNum(def,'def_tds')},
+    ST:{pats:statNum(st,'pats'),fg_0_49:statNum(st,'fg_0_49'),fg_50_plus:statNum(st,'fg_50_plus'),return_tds:statNum(st,'return_tds')}
+  };
   let total=Object.values(parts).reduce((a:any,b:any)=>a+Number(b||0),0);
-  if(lineup.captain && parts[lineup.captain]!=null){ total += Number(parts[lineup.captain]||0); parts[`${lineup.captain}_captain_bonus`]=Number(parts[lineup.captain]||0); }
-  return {points:total,details:parts};
+  if(lineup.captain && parts[lineup.captain]!=null){
+    total += Number(parts[lineup.captain]||0);
+    parts[`${lineup.captain}_captain_bonus`]=Number(parts[lineup.captain]||0);
+  }
+  return {points:total,details:parts,breakdown};
 }
 
 async function refreshLiveStatsIfDue(season:number,week:number){
@@ -199,14 +226,14 @@ async function getLeagueState(manager:any){
     const {data:ls}=await db.from('lineups').select('*').eq('league_id',leagueId).eq('season',ctx.season).eq('week',week);
     for(const l of ls||[]){
       const mgr=(managers||[]).find(x=>x.id===l.manager_id); const sc=await scoreLineup(l,ctx.season,week); const display=await lookupNames(l);
-      visibleLineups.push({name:mgr?.name||'—',points:sc.points,details:sc.details,display,auto_copied:l.auto_copied});
+      visibleLineups.push({name:mgr?.name||'—',points:sc.points,details:sc.details,breakdown:sc.breakdown,display,auto_copied:l.auto_copied});
     }
   }
   const {data:lastSync}=await db.from('app_meta').select('value,updated_at').eq('key','last_sync').maybeSingle();
   const {data:players}=await db.from('players').select('player_id,name,position,team,active,fantasy_positions').in('position',['QB','RB','WR']).not('team','is',null).limit(5000);
   const playerList=(players||[]).map(p=>({player_id:p.player_id,name:p.name,position:p.position,team:p.team,active:p.active}));
   const teams=TEAM_CODES.map(code=>({code,name:TEAM_NAMES[code]}));
-  return {league:{id:league.id,name:league.name,code:league.code},season:ctx.season,week,first_game_at:firstAt,is_locked:locked,managers,me:{id:manager.id,name:manager.name},my_lineup:myLineup,my_week_points:myScore.points,my_week_details:myScore.details,usage,leaderboard,visible_lineups:visibleLineups,pool:{players:playerList,teams},data_last_synced_at:lastSync?.updated_at||null};
+  return {league:{id:league.id,name:league.name,code:league.code},season:ctx.season,week,first_game_at:firstAt,is_locked:locked,managers,me:{id:manager.id,name:manager.name},my_lineup:myLineup,my_week_points:myScore.points,my_week_details:myScore.details,my_week_breakdown:myScore.breakdown,usage,leaderboard,visible_lineups:visibleLineups,pool:{players:playerList,teams},data_last_synced_at:lastSync?.updated_at||null};
 }
 
 async function createLeague(body:any){
@@ -411,8 +438,12 @@ async function syncWeekNow(season:number,week:number){
   const pRows:any[]=[];const team:any={};const teamSummary:any={};
   for(const [pid,row] of Object.entries(stats||{})){
     const x:any=row; const st=x.stats||x; const key=String(pid);
-    const isTeamRow=key.startsWith('TEAM_');
-    const teamCode=normalizeNflTeamCode(x.team||st.team||(isTeamRow?key.slice(5):''));
+    // Sleeper defense/team rows can be keyed either as TEAM_SEA or simply SEA.
+    // Treat both forms as team summaries; otherwise SEA/DEN/etc. are mistaken for
+    // player IDs and DEF/ST team statistics silently remain zero.
+    const keyTeamCode=normalizeNflTeamCode(key.startsWith('TEAM_') ? key.slice(5) : key);
+    const isTeamRow=key.startsWith('TEAM_') || TEAM_CODES.includes(keyTeamCode);
+    const teamCode=normalizeNflTeamCode(x.team||st.team||(isTeamRow?keyTeamCode:''));
     if(isTeamRow){
       if(teamCode) teamSummary[teamCode]={...st};
       continue;
