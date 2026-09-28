@@ -98,7 +98,8 @@ async function ensureData(){
 
 function statNum(o:any,key:string){ const n=Number(o?.[key]??0); return Number.isFinite(n)?n:0; }
 function individualPoints(st:any){
-  return statNum(st,'pass_yd')/25 + statNum(st,'rush_yd')/10 + statNum(st,'rec_yd')/10 + 6*(statNum(st,'pass_td')+statNum(st,'rush_td')+statNum(st,'rec_td')) + 2*(statNum(st,'pass_2pt')+statNum(st,'rush_2pt')+statNum(st,'rec_2pt')) - 2*(statNum(st,'fum_lost')+statNum(st,'pass_int'));
+  const fumbles=Math.max(statNum(st,'fum'),statNum(st,'fum_lost'));
+  return statNum(st,'pass_yd')/25 + statNum(st,'rush_yd')/10 + statNum(st,'rec_yd')/10 + 6*(statNum(st,'pass_td')+statNum(st,'rush_td')+statNum(st,'rec_td')) + 2*(statNum(st,'pass_2pt')+statNum(st,'rush_2pt')+statNum(st,'rec_2pt')) - 2*(fumbles+statNum(st,'pass_int'));
 }
 function passingPoints(t:any){ return statNum(t,'pass_yards')/25 + 6*statNum(t,'pass_tds') + 2*statNum(t,'pass_2pt') - 2*statNum(t,'pass_fumbles'); }
 function rushingPoints(t:any){ return statNum(t,'rush_yards')/10 + 6*statNum(t,'rush_tds') + 2*statNum(t,'rush_2pt') - 2*statNum(t,'rush_fumbles'); }
@@ -161,7 +162,7 @@ async function scoreLineup(lineup:any,season:number,week:number){
       pass_yards:statNumSync(st,'pass_yd'),rush_yards:statNumSync(st,'rush_yd'),rec_yards:statNumSync(st,'rec_yd'),
       pass_tds:statNumSync(st,'pass_td'),rush_tds:statNumSync(st,'rush_td'),rec_tds:statNumSync(st,'rec_td'),
       two_pt:statNumSync(st,'pass_2pt')+statNumSync(st,'rush_2pt')+statNumSync(st,'rec_2pt'),
-      fumbles:statNumSync(st,'fum_lost'),interceptions:statNumSync(st,'pass_int')
+      fumbles:Math.max(statNumSync(st,'fum'),statNumSync(st,'fum_lost')),interceptions:statNumSync(st,'pass_int')
     };
   };
   const pass=tm[lineup.pass_team]||{}; const rush=tm[lineup.rush_team]||{}; const def=tm[lineup.defense_team]||{}; const st=tm[lineup.st_team]||{};
