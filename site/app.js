@@ -255,7 +255,7 @@
 
   function selectOptions(pos, selected) {
     const players = pool.players
-      .filter(p => p.position === pos)
+      .filter(p => pos === 'WR' ? ['WR','TE'].includes(p.position) : p.position === pos)
       .sort((a, b) => a.name.localeCompare(b.name));
 
     return `<option value="">Bitte auswählen</option>` +
