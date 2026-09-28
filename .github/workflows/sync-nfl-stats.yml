@@ -2,6 +2,10 @@ name: Sync NFL Stats
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sync-nfl-stats.yml'
   schedule:
     - cron: '*/5 * * * *'
 
@@ -19,9 +23,17 @@ jobs:
         run: |
           set -euo pipefail
           URL="https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/api"
-          RESPONSE="$(curl --fail-with-body --silent --show-error \
+          TMP="$(mktemp)"
+          HTTP_CODE="$(curl --silent --show-error \
+            -o "$TMP" \
+            -w "%{http_code}" \
             -X POST "$URL" \
             -H "Content-Type: application/json" \
             -H "x-sync-secret: ${SUPABASE_SYNC_SECRET}" \
             --data '{"action":"sync","job":"weekly"}')"
-          echo "$RESPONSE"
+          cat "$TMP"
+          echo
+          echo "HTTP $HTTP_CODE"
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            exit 1
+          fi
