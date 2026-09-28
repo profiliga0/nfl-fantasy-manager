@@ -2,11 +2,6 @@ name: Sync NFL Stats
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/sync-nfl-stats.yml'
-      - 'supabase/functions/api/**'
   schedule:
     - cron: '*/5 * * * *'
 
