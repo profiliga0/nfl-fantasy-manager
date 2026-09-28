@@ -93,7 +93,7 @@ function statNum(o:any,key:string){ const n=Number(o?.[key]??0); return Number.i
 function individualPoints(st:any){
   return statNum(st,'pass_yd')/25 + statNum(st,'rush_yd')/10 + statNum(st,'rec_yd')/10 + 6*(statNum(st,'pass_td')+statNum(st,'rush_td')+statNum(st,'rec_td')) + 2*(statNum(st,'pass_2pt')+statNum(st,'rush_2pt')+statNum(st,'rec_2pt')) - 2*(statNum(st,'fum_lost')+statNum(st,'pass_int'));
 }
-function passingPoints(t:any){ return statNum(t,'pass_yards')/25 + statNum(t,'rec_yards')/25 + 6*statNum(t,'pass_tds') + 2*statNum(t,'pass_2pt') - 2*statNum(t,'pass_fumbles'); }
+function passingPoints(t:any){ return statNum(t,'pass_yards')/25 + 6*statNum(t,'pass_tds') + 2*statNum(t,'pass_2pt') - 2*statNum(t,'pass_int') - 2*statNum(t,'pass_fumbles'); }
 function rushingPoints(t:any){ return statNum(t,'rush_yards')/10 + 6*statNum(t,'rush_tds') + 2*statNum(t,'rush_2pt') - 2*statNum(t,'rush_fumbles'); }
 function defensePoints(t:any){
   const pa=statNum(t,'def_points_allowed'); const base=pa===0?10:(pa<=9?6:(pa<=20?3:0));
@@ -403,20 +403,21 @@ async function syncWeekNow(season:number,week:number){
 
     if(!team[teamCode]) team[teamCode]=teamStatSync();
     const t=team[teamCode];
-    t.pass_yards+=statNumSync(st,'pass_yd');t.pass_tds+=statNumSync(st,'pass_td');t.pass_2pt+=statNumSync(st,'pass_2pt');t.pass_fumbles+=statNumSync(st,'fum_lost');
+    t.pass_yards+=statNumSync(st,'pass_yd');t.pass_tds+=statNumSync(st,'pass_td');t.pass_2pt+=statNumSync(st,'pass_2pt');t.pass_int+=statNumSync(st,'pass_int')+statNumSync(st,'int');t.pass_fumbles+=statNumSync(st,'fum_lost');
     t.rush_yards+=statNumSync(st,'rush_yd');t.rush_tds+=statNumSync(st,'rush_td');t.rush_2pt+=statNumSync(st,'rush_2pt');t.rush_fumbles+=statNumSync(st,'fum_lost');
     t.rec_yards+=statNumSync(st,'rec_yd');t.rec_tds+=statNumSync(st,'rec_td');const xpm=statNumSync(st,'xpm');const fgm50=statNumSync(st,'fgm_50p');const kickPts=statNumSync(st,'kick_pts');const fgm=statNumSync(st,'fgm');const derivedXpm= xpm || (kickPts ? Math.max(0,kickPts-3*(fgm-fgm50)-5*fgm50) : 0);t.pats+=derivedXpm;if(kickPts||fgm||fgm50){t.fg_50_plus+=fgm50;const under50=kickPts?Math.max(0,(kickPts-xpm-3*fgm50)/3):Math.max(0,fgm-fgm50);t.fg_0_49+=under50;}t.return_tds+=statNumSync(st,'kr_td')+statNumSync(st,'pr_td')+statNumSync(st,'fum_td');t.def_interceptions+=statNumSync(st,'def_int')+statNumSync(st,'interception');t.def_fumbles+=statNumSync(st,'def_fum')+statNumSync(st,'fum_rec');t.sacks+=statNumSync(st,'def_sack')+statNumSync(st,'sack');t.safeties+=statNumSync(st,'safe');t.def_tds+=statNumSync(st,'def_td');t.def_points_allowed=Math.max(t.def_points_allowed,statNumSync(st,'pts_allow'));
   }
 
   // Use a TEAM_* value only when the corresponding individual-player
   // aggregation has no value. This is a fallback, not an addition.
-  const teamStatKeys=['pass_yards','pass_tds','pass_2pt','pass_fumbles','rush_yards','rush_tds','rush_2pt','rush_fumbles','rec_yards','rec_tds','pats','fg_0_49','fg_50_plus','return_tds','def_interceptions','def_fumbles','sacks','safeties','def_tds'];
+  const teamStatKeys=['pass_yards','pass_tds','pass_2pt','pass_int','pass_fumbles','rush_yards','rush_tds','rush_2pt','rush_fumbles','rec_yards','rec_tds','pats','fg_0_49','fg_50_plus','return_tds','def_interceptions','def_fumbles','sacks','safeties','def_tds'];
   for(const code of Object.keys(teamSummary)){
     if(!team[code]) team[code]=teamStatSync();
     const t=team[code]; const s=teamSummary[code];
     if(!Number(t.pass_yards)) t.pass_yards=statNumSync(s,'pass_yd');
     if(!Number(t.pass_tds)) t.pass_tds=statNumSync(s,'pass_td');
     if(!Number(t.pass_2pt)) t.pass_2pt=statNumSync(s,'pass_2pt');
+    if(!Number(t.pass_int)) t.pass_int=statNumSync(s,'pass_int')+statNumSync(s,'int');
     if(!Number(t.pass_fumbles)) t.pass_fumbles=statNumSync(s,'fum_lost');
     if(!Number(t.rush_yards)) t.rush_yards=statNumSync(s,'rush_yd');
     if(!Number(t.rush_tds)) t.rush_tds=statNumSync(s,'rush_td');
