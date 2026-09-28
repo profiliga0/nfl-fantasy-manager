@@ -583,15 +583,13 @@ async function syncWeekNow(season:number,week:number){
     t.def_points_allowed=Math.max(Number(t.def_points_allowed||0),statNumSync(s,'pts_allow'),statNumSync(s,'points_allowed'),statNumSync(s,'def_points_allowed'));
   }
 
-  // Use one authoritative weekly-team source for every team slot (PASS/RUSH/DEF/ST).
-  // Sleeper remains the source for individual QB/RB/WR player scoring only.
-  // This avoids mixing incomplete Sleeper team rows with official team totals.
+  // Sleeper remains authoritative for PASS/RUSH because it updates live and has
+  // already supplied the correct offense totals. nflverse is used only for the
+  // DEF/ST fields that Sleeper can omit from weekly player/team rows.
   for(const code of Object.keys(nflverseExtras||{})){
     if(!team[code]) team[code]=teamStatSync();
     const x=nflverseExtras[code]||{};
     for(const key of [
-      'pass_yards','pass_tds','pass_2pt','pass_int','pass_fumbles',
-      'rush_yards','rush_tds','rush_2pt','rush_fumbles','rec_yards','rec_tds',
       'def_interceptions','def_fumbles','sacks','safeties','def_tds',
       'pats','fg_0_49','fg_50_plus','return_tds'
     ]) team[code][key]=Number(x[key]||0);
@@ -608,8 +606,13 @@ async function syncWeekNow(season:number,week:number){
   }
 
   for(let i=0;i<pRows.length;i+=500){const {error}=await db.from('weekly_player_stats').upsert(pRows.slice(i,i+500),{onConflict:'season,week,player_id'});if(error)throw error;}
-  const teamRows=TEAM_CODES_SYNC.filter(c=>team[c]).map(code=>{ const stored={...team[code]}; delete stored.pass_int; return {season,week,team:code,...stored,updated_at:new Date().toISOString()}; });if(teamRows.length){const {error}=await db.from('weekly_team_stats').upsert(teamRows,{onConflict:'season,week,team'});if(error)throw error;}
-  return {games:schedRows.length,players:pRows.length,teams:teamRows.length,debug:{SEA:team.SEA||null,DEN:team.DEN||null,SF:team.SF||null,IND:team.IND||null}};
+  const teamRows=TEAM_CODES_SYNC.filter(c=>team[c]).map(code=>{ const stored={...team[code]}; delete stored.pass_int; return {season,week,team:code,...stored,updated_at:new Date().toISOString()}; });
+  if(teamRows.length){const {error}=await db.from('weekly_team_stats').upsert(teamRows,{onConflict:'season,week,team'});if(error)throw error;}
+  const {data:verify,error:verifyError}=await db.from('weekly_team_stats')
+    .select('team,pass_yards,pass_tds,pass_fumbles,rush_yards,rush_tds,rush_fumbles,def_points_allowed,def_interceptions,def_fumbles,sacks,safeties,def_tds,pats,fg_0_49,fg_50_plus,return_tds')
+    .eq('season',season).eq('week',week).in('team',['SF','IND','SEA','DEN']);
+  if(verifyError)throw verifyError;
+  return {games:schedRows.length,players:pRows.length,teams:teamRows.length,verification:verify||[]};
 }
 async function runSync(job:string){const s=await syncFetch(['https://api.sleeper.app/v1/state/nfl']);const season=Number(s.season),week=Number(s.week);const out:any={season,week};if(job==='players'||job==='all')out.players=await syncPlayersNow();if(job==='weekly'||job==='all'){out.current=await syncWeekNow(season,week);if(week>1)out.previous=await syncWeekNow(season,week-1);}await db.from('app_meta').upsert({key:'last_sync',value:out,updated_at:new Date().toISOString()},{onConflict:'key'});return out;}
 
