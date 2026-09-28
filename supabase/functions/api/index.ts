@@ -607,13 +607,15 @@ async function syncWeekNow(season:number,week:number){
     t.def_points_allowed=Math.max(Number(t.def_points_allowed||0),statNumSync(s,'pts_allow'),statNumSync(s,'points_allowed'),statNumSync(s,'def_points_allowed'));
   }
 
-  // Sleeper remains authoritative for PASS/RUSH because it updates live and has
-  // already supplied the correct offense totals. nflverse is used only for the
-  // DEF/ST fields that Sleeper can omit from weekly player/team rows.
+  // Sleeper supplies live values during games. As soon as nflverse has a
+  // weekly team row, prefer those official team totals for every team slot.
+  // This prevents completed games from keeping incomplete/zero Sleeper team data.
   for(const code of Object.keys(nflverseExtras||{})){
     if(!team[code]) team[code]=teamStatSync();
     const x=nflverseExtras[code]||{};
     for(const key of [
+      'pass_yards','pass_tds','pass_2pt','pass_int',
+      'rush_yards','rush_tds','rush_2pt','rec_yards','rec_tds',
       'def_interceptions','def_fumbles','sacks','safeties','def_tds',
       'pats','fg_0_49','fg_50_plus','return_tds'
     ]) team[code][key]=Number(x[key]||0);
