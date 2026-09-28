@@ -237,7 +237,7 @@ async function getLeagueState(manager:any){
     }
   }
   const {data:lastSync}=await db.from('app_meta').select('value,updated_at').eq('key','last_sync').maybeSingle();
-  const {data:players}=await db.from('players').select('player_id,name,position,team,active,fantasy_positions').in('position',['QB','RB','WR']).not('team','is',null).limit(5000);
+  const {data:players}=await db.from('players').select('player_id,name,position,team,active,fantasy_positions').in('position',['QB','RB','WR','TE']).not('team','is',null).limit(5000);
   const playerList=(players||[]).map(p=>({player_id:p.player_id,name:p.name,position:p.position,team:p.team,active:p.active}));
   const teams=TEAM_CODES.map(code=>({code,name:TEAM_NAMES[code]}));
   return {league:{id:league.id,name:league.name,code:league.code},season:ctx.season,week,first_game_at:firstAt,is_locked:locked,managers,me:{id:manager.id,name:manager.name},my_lineup:myLineup,my_week_points:myScore.points,my_week_details:myScore.details,my_week_breakdown:myScore.breakdown,usage,leaderboard,visible_lineups:visibleLineups,pool:{players:playerList,teams},data_last_synced_at:lastSync?.updated_at||null};
@@ -284,8 +284,12 @@ async function saveLineup(manager:any,body:any){
   if(!isComplete(l))throw new Error('Bitte alle 7 Positionen auswählen und einen Kapitän bestimmen.');
   if(!PLAYER_SLOTS.every(k=>l[k]))throw new Error('QB, RB und WR müssen belegt sein.');
   const {data:ps}=await db.from('players').select('player_id,position,team').in('player_id',[l.QB,l.RB,l.WR]);
-  for(const slot of PLAYER_SLOTS){ const p=(ps||[]).find(x=>x.player_id===l[slot]); if(!p || p.position!==slot)throw new Error(`${slot} Auswahl ist ungültig oder nicht mehr aktuell.`); }
-  for(const k of TEAM_SLOTS){ if(!TEAM_CODES_SYNC.includes(l[k]))throw new Error(`${k} Team ist ungültig.`); }
+  for(const slot of PLAYER_SLOTS){
+    const p=(ps||[]).find(x=>x.player_id===l[slot]);
+    const validPosition=slot==='WR' ? ['WR','TE'].includes(String(p?.position||'')) : p?.position===slot;
+    if(!p || !validPosition) throw new Error(`${slot} Auswahl ist ungültig oder nicht mehr aktuell.`);
+  }
+  for(const k of TEAM_SLOTS){ if(!TEAM_CODES.includes(l[k]))throw new Error(`${k} Team ist ungültig.`); }
   if(new Set([l.PASS,l.RUSH,l.DEF,l.ST]).size!==4)throw new Error('Passing Offense, Rushing Offense, Defense und Special Teams müssen vier verschiedene Teams sein.');
   const usage=await getUsage(manager.league_id,manager.id,ctx.season);
   for(const k of ALL_SLOTS){ const v=l[k]; const old=(await db.from('lineups').select('*').eq('league_id',manager.league_id).eq('manager_id',manager.id).eq('season',ctx.season).eq('week',ctx.week).maybeSingle()).data; const oldVal=old?({QB:old.qb,RB:old.rb,WR:old.wr,PASS:old.pass_team,RUSH:old.rush_team,DEF:old.defense_team,ST:old.st_team} as any)[k]:null; const projected=(usage as any)[k]?.[v]||0; const alreadyCounted=oldVal===v?1:0; if(projected-alreadyCounted>=5) throw new Error(`${labelsFromSlot(k)} / ${TEAM_NAMES[v]||v} wurde bereits 5-mal eingesetzt.`); }
@@ -296,17 +300,14 @@ async function saveLineup(manager:any,body:any){
 }
 
 
-
-const TEAM_CODES_SYNC=['ARI','ATL','BAL','BUF','CAR','CHI','CIN','CLE','DAL','DEN','DET','GB','HOU','IND','JAX','KC','LAC','LAR','LV','MIA','MIN','NE','NO','NYG','NYJ','PHI','PIT','SF','SEA','TB','TEN','WAS'];
 function statNumSync(o:any,k:string){const v=Number(o?.[k]??0);return Number.isFinite(v)?v:0;}
 function teamStatSync(){return {pass_yards:0,pass_tds:0,pass_2pt:0,pass_int:0,pass_fumbles:0,rush_yards:0,rush_tds:0,rush_2pt:0,rush_fumbles:0,rec_yards:0,rec_tds:0,def_points_allowed:0,def_interceptions:0,def_fumbles:0,sacks:0,safeties:0,def_tds:0,pats:0,fg_0_49:0,fg_50_plus:0,return_tds:0};}
-function indivPointsSync(st:any){return statNumSync(st,'pass_yd')/25+statNumSync(st,'rush_yd')/10+statNumSync(st,'rec_yd')/10+6*(statNumSync(st,'pass_td')+statNumSync(st,'rush_td')+statNumSync(st,'rec_td'))+2*(statNumSync(st,'pass_2pt')+statNumSync(st,'rush_2pt')+statNumSync(st,'rec_2pt'))-2*(statNumSync(st,'fum_lost')+statNumSync(st,'pass_int'));}
 async function syncFetch(urls:string[]){let last='';for(const u of urls){try{const r=await fetch(u,{headers:{accept:'application/json'},signal:AbortSignal.timeout(60000)});if(r.ok){const data=await r.json();if(data && typeof data==='object' && Object.keys(data).length>0)return data;last='200 OK but empty response';continue;}last=`${r.status} ${r.statusText}`}catch(e){last=String(e)}}throw new Error(last||'Sleeper API Fehler');}
 async function syncPlayersNow(){
   const data=await syncFetch(['https://api.sleeper.app/v1/players/nfl']); const rows:any[]=[];
   for(const [id,p] of Object.entries(data||{})){const x:any=p;const pos=String(x.position||'');if(!['QB','RB','WR','TE','K','DEF'].includes(pos)||!x.team)continue;rows.push({player_id:id,name:[x.first_name,x.last_name].filter(Boolean).join(' ')||x.full_name||id,first_name:x.first_name||null,last_name:x.last_name||null,position:pos,team:x.team,active:Boolean(x.active),fantasy_positions:x.fantasy_positions||[],updated_at:new Date().toISOString()});}
   for(let i=0;i<rows.length;i+=500){const {error}=await db.from('players').upsert(rows.slice(i,i+500),{onConflict:'player_id'});if(error)throw error;}
-  const t=TEAM_CODES_SYNC.map(code=>({code,name:code,updated_at:new Date().toISOString()})); await db.from('teams').upsert(t,{onConflict:'code'}); return rows.length;
+  const t=TEAM_CODES.map(code=>({code,name:code,updated_at:new Date().toISOString()})); await db.from('teams').upsert(t,{onConflict:'code'}); return rows.length;
 }
 function parseKickoff(value:any){
   if(value===null||value===undefined||value==='') return null;
@@ -324,7 +325,7 @@ function normalizeNflTeamCode(value:any){
   const raw=String(value||'').trim().toUpperCase();
   if(!raw) return '';
   const aliases:Record<string,string>={JAC:'JAX',LA:'LAR',LAR:'LAR',SD:'LAC',OAK:'LV',STL:'LAR'};
-  if(TEAM_CODES_SYNC.includes(raw)) return raw;
+  if(TEAM_CODES.includes(raw)) return raw;
   if(aliases[raw]) return aliases[raw];
   for(const [code,name] of Object.entries(TEAM_NAMES)){
     if(String(name).toUpperCase()===raw) return code;
@@ -447,7 +448,7 @@ async function nflverseWeeklyTeamExtras(season:number,week:number){
       if(Number(row[idx.season])!==season || Number(row[idx.week])!==week) continue;
       if(idx.season_type!=null && String(row[idx.season_type]||'').toUpperCase()!=='REG') continue;
       const code=normalizeNflTeamCode(row[idx.team]);
-      if(!code || !TEAM_CODES_SYNC.includes(code)) continue;
+      if(!code || !TEAM_CODES.includes(code)) continue;
       const offensiveFumblesLost=num(row,'sack_fumbles_lost')+num(row,'rushing_fumbles_lost')+num(row,'receiving_fumbles_lost');
       out[code]={
         pass_yards:num(row,'passing_yards'),
@@ -531,7 +532,7 @@ async function syncWeekNow(season:number,week:number){
     // Treat both forms as team summaries; otherwise SEA/DEN/etc. are mistaken for
     // player IDs and DEF/ST team statistics silently remain zero.
     const keyTeamCode=normalizeNflTeamCode(key.startsWith('TEAM_') ? key.slice(5) : key);
-    const isTeamRow=key.startsWith('TEAM_') || TEAM_CODES_SYNC.includes(keyTeamCode);
+    const isTeamRow=key.startsWith('TEAM_') || TEAM_CODES.includes(keyTeamCode);
     const teamCode=normalizeNflTeamCode(x.team||st.team||(isTeamRow?keyTeamCode:''));
     if(isTeamRow){
       if(teamCode) teamSummary[teamCode]={...st};
@@ -543,7 +544,7 @@ async function syncWeekNow(season:number,week:number){
     // Never add both sources, otherwise team offense/defense is double-counted.
     pRows.push({
       season,week,player_id:key,team:teamCode||null,raw_stats:st,
-      fantasy_points:indivPointsSync(st),
+      fantasy_points:individualPoints(st),
       updated_at:new Date().toISOString()
     });
     if(!teamCode) continue;
@@ -564,7 +565,7 @@ async function syncWeekNow(season:number,week:number){
   const offense:any={};
   for(const p of pRows){
     const code=normalizeNflTeamCode(p.team||rosterTeam[String(p.player_id)]||'');
-    if(!code || !TEAM_CODES_SYNC.includes(code)) continue;
+    if(!code || !TEAM_CODES.includes(code)) continue;
     if(!p.team) p.team=code;
     if(!offense[code]) offense[code]={pass_yards:0,pass_tds:0,pass_2pt:0,pass_int:0,pass_fumbles:0,rush_yards:0,rush_tds:0,rush_2pt:0,rush_fumbles:0,rec_yards:0,rec_tds:0};
     const o=offense[code], st=p.raw_stats||{};
@@ -581,7 +582,6 @@ async function syncWeekNow(season:number,week:number){
 
   // Use a TEAM_* value only when the corresponding individual-player
   // aggregation has no value. This is a fallback, not an addition.
-  const teamStatKeys=['pass_yards','pass_tds','pass_2pt','pass_int','pass_fumbles','rush_yards','rush_tds','rush_2pt','rush_fumbles','rec_yards','rec_tds','pats','fg_0_49','fg_50_plus','return_tds','def_interceptions','def_fumbles','sacks','safeties','def_tds'];
   for(const code of Object.keys(teamSummary)){
     if(!team[code]) team[code]=teamStatSync();
     const t=team[code]; const s=teamSummary[code];
@@ -646,7 +646,7 @@ async function syncWeekNow(season:number,week:number){
   }
 
   for(let i=0;i<pRows.length;i+=500){const {error}=await db.from('weekly_player_stats').upsert(pRows.slice(i,i+500),{onConflict:'season,week,player_id'});if(error)throw error;}
-  const teamRows=TEAM_CODES_SYNC.filter(c=>team[c]).map(code=>{ const stored={...team[code]}; delete stored.pass_int; return {season,week,team:code,...stored,updated_at:new Date().toISOString()}; });
+  const teamRows=TEAM_CODES.filter(c=>team[c]).map(code=>{ const stored={...team[code]}; delete stored.pass_int; return {season,week,team:code,...stored,updated_at:new Date().toISOString()}; });
   if(teamRows.length){const {error}=await db.from('weekly_team_stats').upsert(teamRows,{onConflict:'season,week,team'});if(error)throw error;}
   const {data:verify,error:verifyError}=await db.from('weekly_team_stats')
     .select('team,pass_yards,pass_tds,pass_fumbles,rush_yards,rush_tds,rush_fumbles,def_points_allowed,def_interceptions,def_fumbles,sacks,safeties,def_tds,pats,fg_0_49,fg_50_plus,return_tds')
