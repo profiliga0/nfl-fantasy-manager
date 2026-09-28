@@ -22,6 +22,13 @@ const ALL_SLOTS = ['QB','RB','WR','PASS','RUSH','DEF','ST'];
 
 function json(data: unknown, status=200){ return new Response(JSON.stringify(data), {status, headers}); }
 function err(message: string, status=400){ return json({ok:false,error:message}, status); }
+function errorText(e:any){
+  if(e instanceof Error) return e.message;
+  try{
+    if(e && typeof e==='object') return JSON.stringify(e);
+  }catch(_){}
+  return String(e);
+}
 function now(){ return new Date(); }
 function b64(bytes: Uint8Array){ let s=''; for(const b of bytes)s+=String.fromCharCode(b); return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
 function randomToken(){ const bytes=new Uint8Array(32); crypto.getRandomValues(bytes); return b64(bytes); }
@@ -609,5 +616,5 @@ Deno.serve(async (req) => {
     if(action==='state') return json({ok:true,state:await getLeagueState(manager)});
     if(action==='save_lineup') return json({ok:true,...await saveLineup(manager,body)});
     return err('Unbekannte Aktion.',404);
-  }catch(e){ console.error(e); return err(e instanceof Error?e.message:String(e),400); }
+  }catch(e){ console.error(e); return err(errorText(e),400); }
 });
