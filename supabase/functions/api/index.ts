@@ -417,6 +417,72 @@ async function espnTeamDefenseStats(season:number,week:number){
   }catch(_){}
   return out;
 }
+async function nflverseWeeklyTeamExtras(season:number,week:number){
+  const out:any={};
+  try{
+    const u=`https://github.com/nflverse/nflverse-data/releases/download/stats_team/stats_team_week_${season}.csv`;
+    const r=await fetch(u,{headers:{accept:'text/csv'},signal:AbortSignal.timeout(30000)});
+    if(!r.ok) return out;
+    const text=await r.text();
+    const lines=text.split(/\r?\n/);
+    if(!lines.length) return out;
+    const header=csvRow(lines[0]);
+    const idx:any={}; header.forEach((h,i)=>idx[String(h||'').trim()]=i);
+    const num=(row:string[],key:string)=>{
+      const i=idx[key];
+      if(i==null) return 0;
+      const n=Number(row[i]);
+      return Number.isFinite(n)?n:0;
+    };
+    for(let i=1;i<lines.length;i++){
+      if(!lines[i]) continue;
+      const row=csvRow(lines[i]);
+      if(Number(row[idx.season])!==season || Number(row[idx.week])!==week) continue;
+      if(idx.season_type!=null && String(row[idx.season_type]||'').toUpperCase()!=='REG') continue;
+      const code=normalizeNflTeamCode(row[idx.team]);
+      if(!code || !TEAM_CODES.includes(code)) continue;
+      out[code]={
+        def_interceptions:num(row,'def_interceptions'),
+        def_fumbles:num(row,'fumble_recovery_opp'),
+        sacks:num(row,'def_sacks'),
+        safeties:num(row,'def_safeties'),
+        def_tds:num(row,'def_tds'),
+        pats:num(row,'pat_made'),
+        fg_0_49:num(row,'fg_made_0_19')+num(row,'fg_made_20_29')+num(row,'fg_made_30_39')+num(row,'fg_made_40_49'),
+        fg_50_plus:num(row,'fg_made_50_59')+num(row,'fg_made_60_'),
+        return_tds:num(row,'special_teams_tds')+num(row,'fumble_recovery_tds')
+      };
+    }
+  }catch(_){}
+  return out;
+}
+
+async function nflversePointsAllowed(season:number,week:number){
+  const out:any={};
+  try{
+    const u='https://raw.githubusercontent.com/nflverse/nfldata/master/data/games.csv';
+    const r=await fetch(u,{headers:{accept:'text/csv'},signal:AbortSignal.timeout(30000)});
+    if(!r.ok) return out;
+    const text=await r.text();
+    const lines=text.split(/\r?\n/);
+    if(!lines.length) return out;
+    const header=csvRow(lines[0]);
+    const idx:any={}; header.forEach((h,i)=>idx[String(h||'').trim()]=i);
+    for(let i=1;i<lines.length;i++){
+      if(!lines[i]) continue;
+      const row=csvRow(lines[i]);
+      if(Number(row[idx.season])!==season || Number(row[idx.week])!==week || String(row[idx.game_type]||'')!=='REG') continue;
+      const away=normalizeNflTeamCode(row[idx.away_team]);
+      const home=normalizeNflTeamCode(row[idx.home_team]);
+      const awayScore=Number(row[idx.away_score]);
+      const homeScore=Number(row[idx.home_score]);
+      if(away && Number.isFinite(homeScore)) out[away]=homeScore;
+      if(home && Number.isFinite(awayScore)) out[home]=awayScore;
+    }
+  }catch(_){}
+  return out;
+}
+
 async function syncWeekNow(season:number,week:number){
   const schedule=await syncFetch([`https://api.sleeper.app/schedule/nfl/regular/${season}`]);
   const nflverseMap=await nflverseKickoffSchedule(season,week);
@@ -434,7 +500,11 @@ async function syncWeekNow(season:number,week:number){
   });
   if(schedRows.length){const {error}=await db.from('schedules').upsert(schedRows,{onConflict:'season,game_id'});if(error)throw error;}
   const stats=await syncFetch([`https://api.sleeper.app/v1/stats/nfl/regular/${season}/${week}`,`https://api.sleeper.com/stats/nfl/${season}/${week}?season_type=regular`]);
-  const espnDefense=await espnTeamDefenseStats(season,week);
+  const [espnDefense,nflverseExtras,nflversePA]=await Promise.all([
+    espnTeamDefenseStats(season,week),
+    nflverseWeeklyTeamExtras(season,week),
+    nflversePointsAllowed(season,week)
+  ]);
   const pRows:any[]=[];const team:any={};const teamSummary:any={};
   for(const [pid,row] of Object.entries(stats||{})){
     const x:any=row; const st=x.stats||x; const key=String(pid);
@@ -494,13 +564,31 @@ async function syncWeekNow(season:number,week:number){
     t.def_points_allowed=Math.max(Number(t.def_points_allowed||0),statNumSync(s,'pts_allow'),statNumSync(s,'points_allowed'),statNumSync(s,'def_points_allowed'));
   }
 
-  // Points allowed cannot safely default to zero: zero means a real shutout and awards 10 points.
-  // Sleeper weekly rows may omit a raw pts_allow value, so use the game scoreboard as the
-  // authoritative fallback for the opponent's final/current score.
+  // Sleeper's weekly endpoint can omit team-defense and kicker/special-team fields.
+  // When nflverse has the official weekly team row, use those exact DEF/ST values.
+  // This avoids treating missing values as real zeroes.
+  for(const code of Object.keys(nflverseExtras||{})){
+    if(!team[code]) team[code]=teamStatSync();
+    const x=nflverseExtras[code]||{};
+    team[code].def_interceptions=Number(x.def_interceptions||0);
+    team[code].def_fumbles=Number(x.def_fumbles||0);
+    team[code].sacks=Number(x.sacks||0);
+    team[code].safeties=Number(x.safeties||0);
+    team[code].def_tds=Number(x.def_tds||0);
+    team[code].pats=Number(x.pats||0);
+    team[code].fg_0_49=Number(x.fg_0_49||0);
+    team[code].fg_50_plus=Number(x.fg_50_plus||0);
+    team[code].return_tds=Number(x.return_tds||0);
+  }
+
+  // Points allowed cannot safely default to zero: zero means a real shutout.
+  // Prefer the completed-game score from nflverse; while a game is live, ESPN is the fallback.
   for(const code of TEAM_CODES){
     if(!team[code]) team[code]=teamStatSync();
-    const pa=Number(espnDefense?.[code]?.points_allowed);
-    if(Number.isFinite(pa)) team[code].def_points_allowed=pa;
+    const nflPa=Number(nflversePA?.[code]);
+    const espnPa=Number(espnDefense?.[code]?.points_allowed);
+    if(Number.isFinite(nflPa)) team[code].def_points_allowed=nflPa;
+    else if(Number.isFinite(espnPa)) team[code].def_points_allowed=espnPa;
   }
 
   for(let i=0;i<pRows.length;i+=500){const {error}=await db.from('weekly_player_stats').upsert(pRows.slice(i,i+500),{onConflict:'season,week,player_id'});if(error)throw error;}
