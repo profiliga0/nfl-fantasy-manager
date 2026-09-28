@@ -595,6 +595,20 @@ async function syncWeekNow(season:number,week:number){
     ]) team[code][key]=Number(x[key]||0);
   }
 
+  // Team fumbles lost are the opponent's fumble recoveries. This also captures
+  // lost fumbles on returns/special plays that are not classified as rushing,
+  // receiving or sack fumbles in the weekly offensive columns.
+  for(const g of schedRows){
+    const home=normalizeNflTeamCode(g.home);
+    const away=normalizeNflTeamCode(g.away);
+    if(home && away && nflverseExtras?.[home] && nflverseExtras?.[away]){
+      const homeLost=Number(nflverseExtras[away].def_fumbles||0);
+      const awayLost=Number(nflverseExtras[home].def_fumbles||0);
+      if(team[home]){ team[home].pass_fumbles=homeLost; team[home].rush_fumbles=homeLost; }
+      if(team[away]){ team[away].pass_fumbles=awayLost; team[away].rush_fumbles=awayLost; }
+    }
+  }
+
   // Points allowed cannot safely default to zero: zero means a real shutout.
   // Prefer the completed-game score from nflverse; while a game is live, ESPN is the fallback.
   for(const code of TEAM_CODES){
