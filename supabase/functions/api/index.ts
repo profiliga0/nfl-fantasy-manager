@@ -96,8 +96,16 @@ function individualPoints(st:any){
 function passingPoints(t:any){ return statNum(t,'pass_yards')/25 + 6*statNum(t,'pass_tds') + 2*statNum(t,'pass_2pt') - 2*statNum(t,'pass_int') - 2*statNum(t,'pass_fumbles'); }
 function rushingPoints(t:any){ return statNum(t,'rush_yards')/10 + 6*statNum(t,'rush_tds') + 2*statNum(t,'rush_2pt') - 2*statNum(t,'rush_fumbles'); }
 function defensePoints(t:any){
-  const pa=statNum(t,'def_points_allowed'); const base=pa===0?10:(pa<=9?6:(pa<=20?3:0));
-  return base + 2*(statNum(t,'def_interceptions')+statNum(t,'def_fumbles')) + statNum(t,'sacks') + 2*statNum(t,'safeties') + 6*statNum(t,'def_tds');
+  const pa=statNum(t,'def_points_allowed');
+  // ran scoring: 0 = 10; 2-9 = 6; 10-20 = 3; 21+ = 0.
+  // A one-point score is not listed in the original rules; treat it like 2-9.
+  const base=pa===0 ? 10 : (pa>=1 && pa<=9 ? 6 : (pa>=10 && pa<=20 ? 3 : 0));
+  const interceptions=statNum(t,'def_interceptions');
+  const fumbles=statNum(t,'def_fumbles');
+  const sacks=statNum(t,'sacks');
+  const safeties=statNum(t,'safeties');
+  const defensiveTds=statNum(t,'def_tds');
+  return base + 2*interceptions + 2*fumbles + sacks + 2*safeties + 6*defensiveTds;
 }
 function stPoints(t:any){ return 2*statNum(t,'pats') + 3*statNum(t,'fg_0_49') + 5*statNum(t,'fg_50_plus') + 6*statNum(t,'return_tds'); }
 
