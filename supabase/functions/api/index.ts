@@ -448,7 +448,19 @@ async function nflverseWeeklyTeamExtras(season:number,week:number){
       if(idx.season_type!=null && String(row[idx.season_type]||'').toUpperCase()!=='REG') continue;
       const code=normalizeNflTeamCode(row[idx.team]);
       if(!code || !TEAM_CODES_SYNC.includes(code)) continue;
+      const offensiveFumblesLost=num(row,'sack_fumbles_lost')+num(row,'rushing_fumbles_lost')+num(row,'receiving_fumbles_lost');
       out[code]={
+        pass_yards:num(row,'passing_yards'),
+        pass_tds:num(row,'passing_tds'),
+        pass_2pt:num(row,'passing_2pt_conversions'),
+        pass_int:num(row,'passing_interceptions'),
+        pass_fumbles:offensiveFumblesLost,
+        rush_yards:num(row,'rushing_yards'),
+        rush_tds:num(row,'rushing_tds'),
+        rush_2pt:num(row,'rushing_2pt_conversions'),
+        rush_fumbles:offensiveFumblesLost,
+        rec_yards:num(row,'receiving_yards'),
+        rec_tds:num(row,'receiving_tds'),
         def_interceptions:num(row,'def_interceptions'),
         def_fumbles:num(row,'fumble_recovery_opp'),
         sacks:num(row,'def_sacks'),
@@ -571,21 +583,18 @@ async function syncWeekNow(season:number,week:number){
     t.def_points_allowed=Math.max(Number(t.def_points_allowed||0),statNumSync(s,'pts_allow'),statNumSync(s,'points_allowed'),statNumSync(s,'def_points_allowed'));
   }
 
-  // Sleeper's weekly endpoint can omit team-defense and kicker/special-team fields.
-  // When nflverse has the official weekly team row, use those exact DEF/ST values.
-  // This avoids treating missing values as real zeroes.
+  // Use one authoritative weekly-team source for every team slot (PASS/RUSH/DEF/ST).
+  // Sleeper remains the source for individual QB/RB/WR player scoring only.
+  // This avoids mixing incomplete Sleeper team rows with official team totals.
   for(const code of Object.keys(nflverseExtras||{})){
     if(!team[code]) team[code]=teamStatSync();
     const x=nflverseExtras[code]||{};
-    team[code].def_interceptions=Number(x.def_interceptions||0);
-    team[code].def_fumbles=Number(x.def_fumbles||0);
-    team[code].sacks=Number(x.sacks||0);
-    team[code].safeties=Number(x.safeties||0);
-    team[code].def_tds=Number(x.def_tds||0);
-    team[code].pats=Number(x.pats||0);
-    team[code].fg_0_49=Number(x.fg_0_49||0);
-    team[code].fg_50_plus=Number(x.fg_50_plus||0);
-    team[code].return_tds=Number(x.return_tds||0);
+    for(const key of [
+      'pass_yards','pass_tds','pass_2pt','pass_int','pass_fumbles',
+      'rush_yards','rush_tds','rush_2pt','rush_fumbles','rec_yards','rec_tds',
+      'def_interceptions','def_fumbles','sacks','safeties','def_tds',
+      'pats','fg_0_49','fg_50_plus','return_tds'
+    ]) team[code][key]=Number(x[key]||0);
   }
 
   // Points allowed cannot safely default to zero: zero means a real shutout.
