@@ -97,9 +97,8 @@ function passingPoints(t:any){ return statNum(t,'pass_yards')/25 + 6*statNum(t,'
 function rushingPoints(t:any){ return statNum(t,'rush_yards')/10 + 6*statNum(t,'rush_tds') + 2*statNum(t,'rush_2pt') - 2*statNum(t,'rush_fumbles'); }
 function defensePoints(t:any){
   const pa=statNum(t,'def_points_allowed');
-  // ran scoring: 0 = 10; 2-9 = 6; 10-20 = 3; 21+ = 0.
-  // A one-point score is not listed in the original rules; treat it like 2-9.
-  const base=pa===0 ? 10 : (pa>=1 && pa<=9 ? 6 : (pa>=10 && pa<=20 ? 3 : 0));
+  // League scoring: 0 = 10; 2-9 = 6; 10-20 = 3; 21+ = 0.
+  const base=pa===0 ? 10 : (pa>=2 && pa<=9 ? 6 : (pa>=10 && pa<=20 ? 3 : 0));
   const interceptions=statNum(t,'def_interceptions');
   const fumbles=statNum(t,'def_fumbles');
   const sacks=statNum(t,'sacks');
