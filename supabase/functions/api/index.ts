@@ -364,6 +364,25 @@ async function espnKickoffSchedule(season:number,week:number){
   }
   return new Map<string,string>();
 }
+async function espnTeamDefenseStats(season:number,week:number){
+  const out:any={};
+  try{
+    const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?season=${season}&seasontype=2&week=${week}`,{headers:{accept:'application/json'},signal:AbortSignal.timeout(20000)});
+    if(!r.ok) return out;
+    const j=await r.json();
+    for(const e of (j?.events||[])){
+      const c=e?.competitions?.[0]; const competitors=Array.isArray(c?.competitors)?c.competitors:[];
+      for(const comp of competitors){
+        const code=normalizeNflTeamCode(comp?.team?.abbreviation||comp?.team?.shortDisplayName||comp?.team?.displayName);
+        const opp=competitors.find((x:any)=>x!==comp);
+        if(!code||!opp) continue;
+        const opponentScore=Number(opp?.score||0);
+        if(Number.isFinite(opponentScore)) out[code]={...(out[code]||{}),points_allowed:opponentScore};
+      }
+    }
+  }catch(_){}
+  return out;
+}
 async function syncWeekNow(season:number,week:number){
   const schedule=await syncFetch([`https://api.sleeper.app/schedule/nfl/regular/${season}`]);
   const nflverseMap=await nflverseKickoffSchedule(season,week);
@@ -381,6 +400,7 @@ async function syncWeekNow(season:number,week:number){
   });
   if(schedRows.length){const {error}=await db.from('schedules').upsert(schedRows,{onConflict:'season,game_id'});if(error)throw error;}
   const stats=await syncFetch([`https://api.sleeper.app/v1/stats/nfl/regular/${season}/${week}`,`https://api.sleeper.com/stats/nfl/${season}/${week}?season_type=regular`]);
+  const espnDefense=await espnTeamDefenseStats(season,week);
   const pRows:any[]=[];const team:any={};const teamSummary:any={};
   for(const [pid,row] of Object.entries(stats||{})){
     const x:any=row; const st=x.stats||x; const key=String(pid);
@@ -434,6 +454,15 @@ async function syncWeekNow(season:number,week:number){
     if(!Number(t.safeties)) t.safeties=statNumSync(s,'safe')+statNumSync(s,'safety');
     if(!Number(t.def_tds)) t.def_tds=statNumSync(s,'def_td');
     t.def_points_allowed=Math.max(Number(t.def_points_allowed||0),statNumSync(s,'pts_allow'),statNumSync(s,'points_allowed'),statNumSync(s,'def_points_allowed'));
+  }
+
+  // Points allowed cannot safely default to zero: zero means a real shutout and awards 10 points.
+  // Sleeper weekly rows may omit a raw pts_allow value, so use the game scoreboard as the
+  // authoritative fallback for the opponent's final/current score.
+  for(const code of TEAM_CODES){
+    if(!team[code]) team[code]=teamStatSync();
+    const pa=Number(espnDefense?.[code]?.points_allowed);
+    if(Number.isFinite(pa)) team[code].def_points_allowed=pa;
   }
 
   for(let i=0;i<pRows.length;i+=500){const {error}=await db.from('weekly_player_stats').upsert(pRows.slice(i,i+500),{onConflict:'season,week,player_id'});if(error)throw error;}
