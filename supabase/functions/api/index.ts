@@ -258,7 +258,7 @@ async function saveLineup(manager:any,body:any){
 
 const TEAM_CODES_SYNC=['ARI','ATL','BAL','BUF','CAR','CHI','CIN','CLE','DAL','DEN','DET','GB','HOU','IND','JAX','KC','LAC','LAR','LV','MIA','MIN','NE','NO','NYG','NYJ','PHI','PIT','SF','SEA','TB','TEN','WAS'];
 function statNumSync(o:any,k:string){const v=Number(o?.[k]??0);return Number.isFinite(v)?v:0;}
-function teamStatSync(){return {pass_yards:0,pass_tds:0,pass_2pt:0,pass_fumbles:0,rush_yards:0,rush_tds:0,rush_2pt:0,rush_fumbles:0,rec_yards:0,rec_tds:0,def_points_allowed:0,def_interceptions:0,def_fumbles:0,sacks:0,safeties:0,def_tds:0,pats:0,fg_0_49:0,fg_50_plus:0,return_tds:0};}
+function teamStatSync(){return {pass_yards:0,pass_tds:0,pass_2pt:0,pass_int:0,pass_fumbles:0,rush_yards:0,rush_tds:0,rush_2pt:0,rush_fumbles:0,rec_yards:0,rec_tds:0,def_points_allowed:0,def_interceptions:0,def_fumbles:0,sacks:0,safeties:0,def_tds:0,pats:0,fg_0_49:0,fg_50_plus:0,return_tds:0};}
 function indivPointsSync(st:any){return statNumSync(st,'pass_yd')/25+statNumSync(st,'rush_yd')/10+statNumSync(st,'rec_yd')/10+6*(statNumSync(st,'pass_td')+statNumSync(st,'rush_td')+statNumSync(st,'rec_td'))+2*(statNumSync(st,'pass_2pt')+statNumSync(st,'rush_2pt')+statNumSync(st,'rec_2pt'))-2*(statNumSync(st,'fum_lost')+statNumSync(st,'pass_int'));}
 async function syncFetch(urls:string[]){let last='';for(const u of urls){try{const r=await fetch(u,{headers:{accept:'application/json'},signal:AbortSignal.timeout(60000)});if(r.ok){const data=await r.json();if(data && typeof data==='object' && Object.keys(data).length>0)return data;last='200 OK but empty response';continue;}last=`${r.status} ${r.statusText}`}catch(e){last=String(e)}}throw new Error(last||'Sleeper API Fehler');}
 async function syncPlayersNow(){
@@ -405,7 +405,7 @@ async function syncWeekNow(season:number,week:number){
     const t=team[teamCode];
     t.pass_yards+=statNumSync(st,'pass_yd');t.pass_tds+=statNumSync(st,'pass_td');t.pass_2pt+=statNumSync(st,'pass_2pt');t.pass_int+=statNumSync(st,'pass_int')+statNumSync(st,'int');t.pass_fumbles+=statNumSync(st,'fum_lost');
     t.rush_yards+=statNumSync(st,'rush_yd');t.rush_tds+=statNumSync(st,'rush_td');t.rush_2pt+=statNumSync(st,'rush_2pt');t.rush_fumbles+=statNumSync(st,'fum_lost');
-    t.rec_yards+=statNumSync(st,'rec_yd');t.rec_tds+=statNumSync(st,'rec_td');const xpm=statNumSync(st,'xpm');const fgm50=statNumSync(st,'fgm_50p');const kickPts=statNumSync(st,'kick_pts');const fgm=statNumSync(st,'fgm');const derivedXpm= xpm || (kickPts ? Math.max(0,kickPts-3*(fgm-fgm50)-5*fgm50) : 0);t.pats+=derivedXpm;if(kickPts||fgm||fgm50){t.fg_50_plus+=fgm50;const under50=kickPts?Math.max(0,(kickPts-xpm-3*fgm50)/3):Math.max(0,fgm-fgm50);t.fg_0_49+=under50;}t.return_tds+=statNumSync(st,'kr_td')+statNumSync(st,'pr_td')+statNumSync(st,'fum_td');t.def_interceptions+=statNumSync(st,'def_int')+statNumSync(st,'interception');t.def_fumbles+=statNumSync(st,'def_fum')+statNumSync(st,'fum_rec');t.sacks+=statNumSync(st,'def_sack')+statNumSync(st,'sack');t.safeties+=statNumSync(st,'safe');t.def_tds+=statNumSync(st,'def_td');t.def_points_allowed=Math.max(t.def_points_allowed,statNumSync(st,'pts_allow'));
+    t.rec_yards+=statNumSync(st,'rec_yd');t.rec_tds+=statNumSync(st,'rec_td');const xpm=statNumSync(st,'xpm');const fgm50=statNumSync(st,'fgm_50p');const kickPts=statNumSync(st,'kick_pts');const fgm=statNumSync(st,'fgm');const derivedXpm= xpm || (kickPts ? Math.max(0,kickPts-3*(fgm-fgm50)-5*fgm50) : 0);t.pats+=derivedXpm;if(kickPts||fgm||fgm50){t.fg_50_plus+=fgm50;const under50=kickPts?Math.max(0,(kickPts-xpm-3*fgm50)/3):Math.max(0,fgm-fgm50);t.fg_0_49+=under50;}t.return_tds+=statNumSync(st,'kr_td')+statNumSync(st,'pr_td')+statNumSync(st,'fum_td');t.def_interceptions+=statNumSync(st,'int')+statNumSync(st,'def_int')+statNumSync(st,'interception');t.def_fumbles+=statNumSync(st,'fum_rec')+statNumSync(st,'def_fum')+statNumSync(st,'fum_recovery');t.sacks+=statNumSync(st,'sack')+statNumSync(st,'def_sack');t.safeties+=statNumSync(st,'safe')+statNumSync(st,'safety');t.def_tds+=statNumSync(st,'def_td');t.def_points_allowed=Math.max(t.def_points_allowed,statNumSync(st,'pts_allow'),statNumSync(st,'points_allowed'),statNumSync(st,'def_points_allowed'));
   }
 
   // Use a TEAM_* value only when the corresponding individual-player
@@ -428,12 +428,12 @@ async function syncWeekNow(season:number,week:number){
     if(!Number(t.pats)) { const xpm=statNumSync(s,'xpm'); const fgm=statNumSync(s,'fgm'); const fgm50=statNumSync(s,'fgm_50p'); const kickPts=statNumSync(s,'kick_pts'); t.pats=xpm || (kickPts ? Math.max(0,kickPts-3*(fgm-fgm50)-5*fgm50) : 0); }
     if(!Number(t.fg_0_49) && !Number(t.fg_50_plus)) { const xpm=statNumSync(s,'xpm'); const fgm=statNumSync(s,'fgm'); const fgm50=statNumSync(s,'fgm_50p'); const kickPts=statNumSync(s,'kick_pts'); t.fg_50_plus=fgm50; if(kickPts) t.fg_0_49=Math.max(0,(kickPts-xpm-3*fgm50)/3); else if(fgm) t.fg_0_49=Math.max(0,fgm-fgm50); else t.fg_0_49=statNumSync(s,'fgm_40_49'); }
     if(!Number(t.return_tds)) t.return_tds=statNumSync(s,'kr_td')+statNumSync(s,'pr_td')+statNumSync(s,'fum_td');
-    if(!Number(t.def_interceptions)) t.def_interceptions=statNumSync(s,'def_int')+statNumSync(s,'interception');
-    if(!Number(t.def_fumbles)) t.def_fumbles=statNumSync(s,'def_fum')+statNumSync(s,'fum_rec');
-    if(!Number(t.sacks)) t.sacks=statNumSync(s,'def_sack')+statNumSync(s,'sack');
-    if(!Number(t.safeties)) t.safeties=statNumSync(s,'safe');
+    if(!Number(t.def_interceptions)) t.def_interceptions=statNumSync(s,'int')+statNumSync(s,'def_int')+statNumSync(s,'interception');
+    if(!Number(t.def_fumbles)) t.def_fumbles=statNumSync(s,'fum_rec')+statNumSync(s,'def_fum')+statNumSync(s,'fum_recovery');
+    if(!Number(t.sacks)) t.sacks=statNumSync(s,'sack')+statNumSync(s,'def_sack');
+    if(!Number(t.safeties)) t.safeties=statNumSync(s,'safe')+statNumSync(s,'safety');
     if(!Number(t.def_tds)) t.def_tds=statNumSync(s,'def_td');
-    t.def_points_allowed=Math.max(Number(t.def_points_allowed||0),statNumSync(s,'pts_allow'));
+    t.def_points_allowed=Math.max(Number(t.def_points_allowed||0),statNumSync(s,'pts_allow'),statNumSync(s,'points_allowed'),statNumSync(s,'def_points_allowed'));
   }
 
   for(let i=0;i<pRows.length;i+=500){const {error}=await db.from('weekly_player_stats').upsert(pRows.slice(i,i+500),{onConflict:'season,week,player_id'});if(error)throw error;}
