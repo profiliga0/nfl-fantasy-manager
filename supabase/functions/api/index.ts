@@ -600,7 +600,7 @@ async function syncWeekNow(season:number,week:number){
 
   for(let i=0;i<pRows.length;i+=500){const {error}=await db.from('weekly_player_stats').upsert(pRows.slice(i,i+500),{onConflict:'season,week,player_id'});if(error)throw error;}
   const teamRows=TEAM_CODES_SYNC.filter(c=>team[c]).map(code=>{ const stored={...team[code]}; delete stored.pass_int; return {season,week,team:code,...stored,updated_at:new Date().toISOString()}; });if(teamRows.length){const {error}=await db.from('weekly_team_stats').upsert(teamRows,{onConflict:'season,week,team'});if(error)throw error;}
-  return {games:schedRows.length,players:pRows.length,teams:teamRows.length};
+  return {games:schedRows.length,players:pRows.length,teams:teamRows.length,debug:{SEA:team.SEA||null,DEN:team.DEN||null,SF:team.SF||null,IND:team.IND||null}};
 }
 async function runSync(job:string){const s=await syncFetch(['https://api.sleeper.app/v1/state/nfl']);const season=Number(s.season),week=Number(s.week);const out:any={season,week};if(job==='players'||job==='all')out.players=await syncPlayersNow();if(job==='weekly'||job==='all'){out.current=await syncWeekNow(season,week);if(week>1)out.previous=await syncWeekNow(season,week-1);}await db.from('app_meta').upsert({key:'last_sync',value:out,updated_at:new Date().toISOString()},{onConflict:'key'});return out;}
 
