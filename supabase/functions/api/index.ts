@@ -555,6 +555,30 @@ async function syncWeekNow(season:number,week:number){
     t.rec_yards+=statNumSync(st,'rec_yd');t.rec_tds+=statNumSync(st,'rec_td');const xpm=statNumSync(st,'xpm');const fgm50=statNumSync(st,'fgm_50p');const kickPts=statNumSync(st,'kick_pts');const fgm=statNumSync(st,'fgm');const derivedXpm= xpm || (kickPts ? Math.max(0,kickPts-3*(fgm-fgm50)-5*fgm50) : 0);t.pats+=derivedXpm;if(kickPts||fgm||fgm50){t.fg_50_plus+=fgm50;const under50=kickPts?Math.max(0,(kickPts-xpm-3*fgm50)/3):Math.max(0,fgm-fgm50);t.fg_0_49+=under50;}t.return_tds+=statNumSync(st,'kr_td')+statNumSync(st,'pr_td')+statNumSync(st,'fum_td');t.def_interceptions+=statNumSync(st,'def_int')+statNumSync(st,'interception');t.def_fumbles+=statNumSync(st,'fum_rec')+statNumSync(st,'def_fum')+statNumSync(st,'fum_recovery');t.sacks+=statNumSync(st,'def_sack')+statNumSync(st,'sack');t.safeties+=statNumSync(st,'safe')+statNumSync(st,'safety');t.def_tds+=statNumSync(st,'def_td');t.def_points_allowed=Math.max(t.def_points_allowed,statNumSync(st,'pts_allow'),statNumSync(st,'points_allowed'),statNumSync(st,'def_points_allowed'));
   }
 
+  // Some Sleeper weekly rows omit the team code on individual players.
+  // Rebuild PASS/RUSH offense once from the player stats plus the roster table so
+  // a missing team code cannot zero an otherwise valid offense (e.g. SF).
+  const {data:rosterRows,error:rosterError}=await db.from('players').select('player_id,team').not('team','is',null).limit(5000);
+  if(rosterError) throw rosterError;
+  const rosterTeam:any={}; for(const p of rosterRows||[]) rosterTeam[String(p.player_id)]=normalizeNflTeamCode(p.team);
+  const offense:any={};
+  for(const p of pRows){
+    const code=normalizeNflTeamCode(p.team||rosterTeam[String(p.player_id)]||'');
+    if(!code || !TEAM_CODES_SYNC.includes(code)) continue;
+    if(!p.team) p.team=code;
+    if(!offense[code]) offense[code]={pass_yards:0,pass_tds:0,pass_2pt:0,pass_int:0,pass_fumbles:0,rush_yards:0,rush_tds:0,rush_2pt:0,rush_fumbles:0,rec_yards:0,rec_tds:0};
+    const o=offense[code], st=p.raw_stats||{};
+    o.pass_yards+=statNumSync(st,'pass_yd'); o.pass_tds+=statNumSync(st,'pass_td'); o.pass_2pt+=statNumSync(st,'pass_2pt'); o.pass_int+=statNumSync(st,'pass_int')+statNumSync(st,'int'); o.pass_fumbles+=statNumSync(st,'fum_lost');
+    o.rush_yards+=statNumSync(st,'rush_yd'); o.rush_tds+=statNumSync(st,'rush_td'); o.rush_2pt+=statNumSync(st,'rush_2pt'); o.rush_fumbles+=statNumSync(st,'fum_lost');
+    o.rec_yards+=statNumSync(st,'rec_yd'); o.rec_tds+=statNumSync(st,'rec_td');
+  }
+  for(const code of Object.keys(offense)){
+    if(!team[code]) team[code]=teamStatSync();
+    for(const key of ['pass_yards','pass_tds','pass_2pt','pass_int','pass_fumbles','rush_yards','rush_tds','rush_2pt','rush_fumbles','rec_yards','rec_tds']){
+      team[code][key]=Number(offense[code][key]||0);
+    }
+  }
+
   // Use a TEAM_* value only when the corresponding individual-player
   // aggregation has no value. This is a fallback, not an addition.
   const teamStatKeys=['pass_yards','pass_tds','pass_2pt','pass_int','pass_fumbles','rush_yards','rush_tds','rush_2pt','rush_fumbles','rec_yards','rec_tds','pats','fg_0_49','fg_50_plus','return_tds','def_interceptions','def_fumbles','sacks','safeties','def_tds'];
