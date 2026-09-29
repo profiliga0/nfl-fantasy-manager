@@ -697,7 +697,39 @@ async function syncWeekNow(season:number,week:number){
   if(verifyError)throw verifyError;
   return {games:schedRows.length,players:pRows.length,teams:teamRows.length,verification:verify||[]};
 }
-async function runSync(job:string){const s=await syncFetch(['https://api.sleeper.app/v1/state/nfl']);const season=Number(s.season),week=Number(s.week);const out:any={season,week};if(job==='players'||job==='all')out.players=await syncPlayersNow();if(job==='weekly'||job==='all'){out.current=await syncWeekNow(season,week);if(week>1)out.previous=await syncWeekNow(season,week-1);}await db.from('app_meta').upsert({key:'last_sync',value:out,updated_at:new Date().toISOString()},{onConflict:'key'});return out;}
+async function syncSeasonWeek(){
+  try{
+    const s=await syncFetch([
+      'https://api.sleeper.app/v1/state/nfl',
+      'https://api.sleeper.com/v1/state/nfl'
+    ]);
+    const season=Number(s?.season), week=Number(s?.week);
+    if(Number.isFinite(season) && season>2000 && Number.isFinite(week) && week>0) return {season,week};
+  }catch(_){}
+  // Sleeper's state endpoint is occasionally empty even while weekly stats remain
+  // available. Fall back to the latest NFL gameweek already known in our schedule
+  // so a temporary state-endpoint outage cannot freeze completed-week scoring.
+  const {data,error}=await db.from('schedules')
+    .select('season,week,starts_at')
+    .lte('starts_at',new Date().toISOString())
+    .order('starts_at',{ascending:false})
+    .limit(1)
+    .maybeSingle();
+  if(error) throw error;
+  if(data && Number(data.season)>2000 && Number(data.week)>0) return {season:Number(data.season),week:Number(data.week)};
+  throw new Error('NFL-Saison/Woche konnte nicht bestimmt werden.');
+}
+async function runSync(job:string){
+  const ctx=await syncSeasonWeek(); const season=ctx.season,week=ctx.week;
+  const out:any={season,week};
+  if(job==='players'||job==='all')out.players=await syncPlayersNow();
+  if(job==='weekly'||job==='all'){
+    out.current=await syncWeekNow(season,week);
+    if(week>1)out.previous=await syncWeekNow(season,week-1);
+  }
+  await db.from('app_meta').upsert({key:'last_sync',value:out,updated_at:new Date().toISOString()},{onConflict:'key'});
+  return out;
+}
 
 Deno.serve(async (req) => {
   if(req.method==='OPTIONS') return new Response('ok',{headers});
