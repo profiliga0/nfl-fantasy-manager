@@ -244,6 +244,52 @@ async function getLeagueState(manager:any){
   return {league:{id:league.id,name:league.name,code:league.code},season:ctx.season,week,first_game_at:firstAt,is_locked:locked,managers,me:{id:manager.id,name:manager.name},my_lineup:myLineup,my_week_points:myScore.points,my_week_details:myScore.details,my_week_breakdown:myScore.breakdown,usage,leaderboard,visible_lineups:visibleLineups,pool:{players:playerList,teams},data_last_synced_at:lastSync?.updated_at||null};
 }
 
+
+async function getLeagueHistoryWeek(manager:any,requestedWeek:any){
+  await ensureData();
+  const ctx=await seasonContext();
+  const week=Number(requestedWeek);
+  if(!Number.isInteger(week) || week<1 || week>=ctx.week) throw new Error('Nur vergangene Spieltage können angezeigt werden.');
+
+  const leagueId=manager.league_id;
+  const {data:managers,error:me}=await db.from('managers').select('id,name').eq('league_id',leagueId).order('created_at',{ascending:true});
+  if(me) throw me;
+  const {data:weekLineups,error:le}=await db.from('lineups').select('*').eq('league_id',leagueId).eq('season',ctx.season).eq('week',week);
+  if(le) throw le;
+  const byManager:any={}; for(const l of weekLineups||[]) byManager[l.manager_id]=l;
+
+  const lineups:any[]=[];
+  for(const m of managers||[]){
+    const l=byManager[m.id]||null;
+    if(!l){
+      lineups.push({name:m.name,has_lineup:false,points:0,details:{},display:null,auto_copied:false});
+      continue;
+    }
+    const sc=await scoreLineup(l,ctx.season,week);
+    const display=await lookupNames(l);
+    lineups.push({
+      name:m.name,
+      has_lineup:true,
+      points:sc.points,
+      details:sc.details,
+      display,
+      auto_copied:Boolean(l.auto_copied),
+      submitted_at:l.submitted_at||null
+    });
+  }
+
+  const standings:any[]=[];
+  for(const m of managers||[]){
+    const {data:ls,error:lse}=await db.from('lineups').select('*').eq('league_id',leagueId).eq('manager_id',m.id).eq('season',ctx.season).lte('week',week);
+    if(lse) throw lse;
+    let total=0;
+    for(const l of ls||[]) total+=(await scoreLineup(l,ctx.season,l.week)).points;
+    standings.push({name:m.name,total_points:total});
+  }
+
+  return {season:ctx.season,week,lineups,standings};
+}
+
 async function createLeague(body:any){
   const leagueName=cleanName(body.league_name)||'NFL Fantasy Liga'; const managerName=cleanName(body.manager_name); const pin=String(body.pin||'');
   if(!managerName) throw new Error('Bitte einen Namen eingeben.'); if(!validPin(pin)) throw new Error('PIN muss 4 bis 12 Ziffern haben.');
@@ -664,6 +710,7 @@ Deno.serve(async (req) => {
     if(action==='sync'){ const secret=Deno.env.get('SYNC_SECRET')||''; if(!secret || (req.headers.get('x-sync-secret')||'')!==secret) return err('Nicht autorisiert.',401); return json({ok:true,result:await runSync(String(body.job||'weekly'))}); }
     const manager=await getSession(String(body.token||''));
     if(action==='state') return json({ok:true,state:await getLeagueState(manager)});
+    if(action==='history_week') return json({ok:true,history:await getLeagueHistoryWeek(manager,body.week)});
     if(action==='save_lineup') return json({ok:true,...await saveLineup(manager,body)});
     return err('Unbekannte Aktion.',404);
   }catch(e){ console.error(e); return err(errorText(e),400); }
