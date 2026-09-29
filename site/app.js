@@ -11,6 +11,9 @@
   let draftLineup = null;
   let lineupDirty = false;
   let loadingState = false;
+  let historyWeek = null;
+  let historyData = null;
+  let historyLoading = false;
 
   const POS = ['QB','RB','WR','PASS','RUSH','DEF','ST'];
   const labels = {
@@ -136,7 +139,20 @@
         draftLineup = null;
       }
 
+      const shouldLoadHistory =
+        state.week > 1 &&
+        (!historyData || historyData.season !== state.season || !historyWeek || historyWeek >= state.week);
+
+      if (shouldLoadHistory) {
+        historyWeek = state.week - 1;
+        historyData = null;
+      }
+
       render();
+
+      if (shouldLoadHistory) {
+        loadHistoryWeek(historyWeek).catch(() => {});
+      }
     } finally {
       loadingState = false;
     }
@@ -227,6 +243,7 @@
     renderForm();
     renderLeaderboard();
     renderOtherLineups();
+    renderHistoryControls();
 
     el('saveLineupBtn').disabled = locked;
 
@@ -377,6 +394,104 @@
       el('saveLineupBtn').disabled = false;
       el('saveState').textContent = '';
     }
+  }
+
+  function renderHistoryControls() {
+    const select = el('historyWeekSelect');
+    const status = el('historyStatus');
+    const standings = el('historyStandings');
+    const lineups = el('historyLineups');
+    if (!select || !status || !standings || !lineups) return;
+
+    if (!state || state.week <= 1) {
+      select.innerHTML = '<option>Keine vergangenen Spieltage</option>';
+      select.disabled = true;
+      status.textContent = 'Noch kein vergangener Spieltag verfügbar.';
+      standings.innerHTML = '';
+      lineups.innerHTML = '';
+      return;
+    }
+
+    select.disabled = false;
+    select.innerHTML = Array.from({length: state.week - 1}, (_, i) => i + 1)
+      .reverse()
+      .map(w => `<option value="${w}" ${Number(historyWeek)===w?'selected':''}>Woche ${w}</option>`)
+      .join('');
+
+    renderHistory();
+  }
+
+  async function loadHistoryWeek(week) {
+    if (historyLoading || !week) return;
+    historyLoading = true;
+    const status = el('historyStatus');
+    if (status) status.textContent = `Woche ${week} wird geladen…`;
+
+    try {
+      const d = await call('history_week', { week: Number(week) });
+      historyWeek = Number(week);
+      historyData = d.history;
+      renderHistoryControls();
+    } catch (e) {
+      if (status) status.textContent = e.message;
+    } finally {
+      historyLoading = false;
+    }
+  }
+
+  function renderHistory() {
+    const status = el('historyStatus');
+    const standings = el('historyStandings');
+    const container = el('historyLineups');
+    if (!status || !standings || !container) return;
+
+    if (!historyData || Number(historyData.week) !== Number(historyWeek)) {
+      status.textContent = historyLoading ? `Woche ${historyWeek} wird geladen…` : 'Spieltag auswählen.';
+      standings.innerHTML = '';
+      container.innerHTML = '';
+      return;
+    }
+
+    status.textContent = `NFL ${historyData.season} · Woche ${historyData.week}`;
+
+    const table = [...(historyData.standings || [])]
+      .sort((a,b) => Number(b.total_points||0) - Number(a.total_points||0));
+    standings.innerHTML = table.length
+      ? `<div class="points-breakdown"><strong>Stand nach Woche ${historyData.week}:</strong> ${table.map((r,i)=>`${i+1}. ${escapeHtml(r.name)} ${pct(r.total_points)} Pkt.`).join(' · ')}</div>`
+      : '';
+
+    const list = historyData.lineups || [];
+    container.innerHTML = list.map(m => {
+      if (!m.has_lineup || !m.display) {
+        return `<div class="manager"><div class="muted">${escapeHtml(m.name)} · Woche ${historyData.week}</div><div class="tiny">Keine gespeicherte Aufstellung vorhanden.</div></div>`;
+      }
+      const d = m.details || {};
+      const copied = m.auto_copied
+        ? '<div class="tiny"><strong>Automatisch aus der Vorwoche übernommen</strong></div>'
+        : '';
+      return `
+        <div class="manager">
+          <div class="muted">${escapeHtml(m.name)} · Woche ${historyData.week}</div>
+          <div class="score">${pct(m.points)} Pkt.</div>
+          <div class="tiny">
+            QB: ${escapeHtml(m.display.QB)} ·
+            RB: ${escapeHtml(m.display.RB)} ·
+            WR: ${escapeHtml(m.display.WR)}<br>
+            PASS: ${escapeHtml(m.display.PASS)} ·
+            RUSH: ${escapeHtml(m.display.RUSH)} ·
+            DEF: ${escapeHtml(m.display.DEF)} ·
+            ST: ${escapeHtml(m.display.ST)}<br>
+            Kapitän: ${escapeHtml(m.display.captain)}
+          </div>
+          <div class="points-breakdown">
+            QB ${pct(Number(d.QB||0)+Number(d.QB_captain_bonus||0))} ·
+            RB ${pct(Number(d.RB||0)+Number(d.RB_captain_bonus||0))} ·
+            WR ${pct(Number(d.WR||0)+Number(d.WR_captain_bonus||0))} ·
+            PASS ${pct(d.PASS)} · RUSH ${pct(d.RUSH)} · DEF ${pct(d.DEF)} · ST ${pct(d.ST)}
+          </div>
+          ${copied}
+        </div>`;
+    }).join('');
   }
 
   function renderLeaderboard() {
@@ -575,6 +690,18 @@ el('lineupForm').addEventListener('change', event => {
   el('refreshBtn').addEventListener('click', () => {
     // Manueller Refresh darf den Entwurf ebenfalls nicht verlieren.
     loadState().catch(e => alert(e.message));
+  });
+
+  el('historyWeekSelect').addEventListener('change', event => {
+    const week = Number(event.target.value);
+    if (!week) return;
+    historyWeek = week;
+    historyData = null;
+    renderHistoryControls();
+    loadHistoryWeek(week).catch(e => {
+      const status = el('historyStatus');
+      if (status) status.textContent = e.message;
+    });
   });
 
   el('logoutBtn').addEventListener('click', () => {
