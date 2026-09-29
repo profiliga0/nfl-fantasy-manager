@@ -450,17 +450,21 @@ async function nflverseWeeklyTeamExtras(season:number,week:number){
       if(idx.season_type!=null && String(row[idx.season_type]||'').toUpperCase()!=='REG') continue;
       const code=normalizeNflTeamCode(row[idx.team]);
       if(!code || !TEAM_CODES.includes(code)) continue;
-      const offensiveFumbles=num(row,'sack_fumbles')+num(row,'rushing_fumbles')+num(row,'receiving_fumbles');
+      // Fumbles must belong to the scoring category in which they happened.
+      // PASS: fumbles on passing plays (QB sacks + receptions after a completed pass).
+      // RUSH: fumbles on rushing plays only. Special-teams fumbles are excluded from both.
+      const passFumbles=num(row,'sack_fumbles')+num(row,'receiving_fumbles');
+      const rushFumbles=num(row,'rushing_fumbles');
       out[code]={
         pass_yards:num(row,'passing_yards'),
         pass_tds:num(row,'passing_tds'),
         pass_2pt:num(row,'passing_2pt_conversions'),
         pass_int:num(row,'passing_interceptions'),
-        pass_fumbles:offensiveFumbles,
+        pass_fumbles:passFumbles,
         rush_yards:num(row,'rushing_yards'),
         rush_tds:num(row,'rushing_tds'),
         rush_2pt:num(row,'rushing_2pt_conversions'),
-        rush_fumbles:offensiveFumbles,
+        rush_fumbles:rushFumbles,
         rec_yards:num(row,'receiving_yards'),
         rec_tds:num(row,'receiving_tds'),
         def_interceptions:num(row,'def_interceptions'),
@@ -552,8 +556,8 @@ async function syncWeekNow(season:number,week:number){
 
     if(!team[teamCode]) team[teamCode]=teamStatSync();
     const t=team[teamCode];
-    t.pass_yards+=statNumSync(st,'pass_yd');t.pass_tds+=statNumSync(st,'pass_td');t.pass_2pt+=statNumSync(st,'pass_2pt');t.pass_int+=statNumSync(st,'pass_int')+statNumSync(st,'int');t.pass_fumbles+=Math.max(statNumSync(st,'fum'),statNumSync(st,'fum_lost'));
-    t.rush_yards+=statNumSync(st,'rush_yd');t.rush_tds+=statNumSync(st,'rush_td');t.rush_2pt+=statNumSync(st,'rush_2pt');t.rush_fumbles+=Math.max(statNumSync(st,'fum'),statNumSync(st,'fum_lost'));
+    t.pass_yards+=statNumSync(st,'pass_yd');t.pass_tds+=statNumSync(st,'pass_td');t.pass_2pt+=statNumSync(st,'pass_2pt');t.pass_int+=statNumSync(st,'pass_int')+statNumSync(st,'int');
+    t.rush_yards+=statNumSync(st,'rush_yd');t.rush_tds+=statNumSync(st,'rush_td');t.rush_2pt+=statNumSync(st,'rush_2pt');
     t.rec_yards+=statNumSync(st,'rec_yd');t.rec_tds+=statNumSync(st,'rec_td');const xpm=statNumSync(st,'xpm');const fgm50=statNumSync(st,'fgm_50p');const kickPts=statNumSync(st,'kick_pts');const fgm=statNumSync(st,'fgm');const derivedXpm= xpm || (kickPts ? Math.max(0,kickPts-3*(fgm-fgm50)-5*fgm50) : 0);t.pats+=derivedXpm;if(kickPts||fgm||fgm50){t.fg_50_plus+=fgm50;const under50=kickPts?Math.max(0,(kickPts-xpm-3*fgm50)/3):Math.max(0,fgm-fgm50);t.fg_0_49+=under50;}t.return_tds+=statNumSync(st,'kr_td')+statNumSync(st,'pr_td')+statNumSync(st,'fum_td');t.def_interceptions+=statNumSync(st,'def_int')+statNumSync(st,'interception');t.def_fumbles+=statNumSync(st,'fum_rec')+statNumSync(st,'def_fum')+statNumSync(st,'fum_recovery');t.sacks+=statNumSync(st,'def_sack')+statNumSync(st,'sack');t.safeties+=statNumSync(st,'safe')+statNumSync(st,'safety');t.def_tds+=statNumSync(st,'def_td');t.def_points_allowed=Math.max(t.def_points_allowed,statNumSync(st,'pts_allow'),statNumSync(st,'points_allowed'),statNumSync(st,'def_points_allowed'));
   }
 
@@ -570,8 +574,8 @@ async function syncWeekNow(season:number,week:number){
     if(!p.team) p.team=code;
     if(!offense[code]) offense[code]={pass_yards:0,pass_tds:0,pass_2pt:0,pass_int:0,pass_fumbles:0,rush_yards:0,rush_tds:0,rush_2pt:0,rush_fumbles:0,rec_yards:0,rec_tds:0};
     const o=offense[code], st=p.raw_stats||{};
-    o.pass_yards+=statNumSync(st,'pass_yd'); o.pass_tds+=statNumSync(st,'pass_td'); o.pass_2pt+=statNumSync(st,'pass_2pt'); o.pass_int+=statNumSync(st,'pass_int')+statNumSync(st,'int'); o.pass_fumbles+=Math.max(statNumSync(st,'fum'),statNumSync(st,'fum_lost'));
-    o.rush_yards+=statNumSync(st,'rush_yd'); o.rush_tds+=statNumSync(st,'rush_td'); o.rush_2pt+=statNumSync(st,'rush_2pt'); o.rush_fumbles+=Math.max(statNumSync(st,'fum'),statNumSync(st,'fum_lost'));
+    o.pass_yards+=statNumSync(st,'pass_yd'); o.pass_tds+=statNumSync(st,'pass_td'); o.pass_2pt+=statNumSync(st,'pass_2pt'); o.pass_int+=statNumSync(st,'pass_int')+statNumSync(st,'int');
+    o.rush_yards+=statNumSync(st,'rush_yd'); o.rush_tds+=statNumSync(st,'rush_td'); o.rush_2pt+=statNumSync(st,'rush_2pt');
     o.rec_yards+=statNumSync(st,'rec_yd'); o.rec_tds+=statNumSync(st,'rec_td');
   }
   for(const code of Object.keys(offense)){
@@ -590,11 +594,9 @@ async function syncWeekNow(season:number,week:number){
     if(!Number(t.pass_tds)) t.pass_tds=statNumSync(s,'pass_td');
     if(!Number(t.pass_2pt)) t.pass_2pt=statNumSync(s,'pass_2pt');
     if(!Number(t.pass_int)) t.pass_int=statNumSync(s,'pass_int')+statNumSync(s,'int');
-    if(!Number(t.pass_fumbles)) t.pass_fumbles=Math.max(statNumSync(s,'fum'),statNumSync(s,'fum_lost'));
     if(!Number(t.rush_yards)) t.rush_yards=statNumSync(s,'rush_yd');
     if(!Number(t.rush_tds)) t.rush_tds=statNumSync(s,'rush_td');
     if(!Number(t.rush_2pt)) t.rush_2pt=statNumSync(s,'rush_2pt');
-    if(!Number(t.rush_fumbles)) t.rush_fumbles=Math.max(statNumSync(s,'fum'),statNumSync(s,'fum_lost'));
     if(!Number(t.rec_yards)) t.rec_yards=statNumSync(s,'rec_yd');
     if(!Number(t.rec_tds)) t.rec_tds=statNumSync(s,'rec_td');
     if(!Number(t.pats)) { const xpm=statNumSync(s,'xpm'); const fgm=statNumSync(s,'fgm'); const fgm50=statNumSync(s,'fgm_50p'); const kickPts=statNumSync(s,'kick_pts'); t.pats=xpm || (kickPts ? Math.max(0,kickPts-3*(fgm-fgm50)-5*fgm50) : 0); }
@@ -620,6 +622,15 @@ async function syncWeekNow(season:number,week:number){
       'def_interceptions','def_fumbles','sacks','safeties','def_tds',
       'pats','fg_0_49','fg_50_plus','return_tds'
     ]) team[code][key]=Number(x[key]||0);
+  }
+
+  // Category-specific offense fumbles come from nflverse because Sleeper's
+  // generic player/team fumble fields do not identify PASS vs RUSH vs special teams.
+  for(const code of Object.keys(nflverseExtras||{})){
+    if(!team[code]) team[code]=teamStatSync();
+    const x=nflverseExtras[code]||{};
+    team[code].pass_fumbles=Number(x.pass_fumbles||0);
+    team[code].rush_fumbles=Number(x.rush_fumbles||0);
   }
 
   // Points allowed cannot safely default to zero: zero means a real shutout.
