@@ -65,12 +65,22 @@ WICHTIG:
 - keine Receiving Yards
 - keine Interception-Strafe
 
+WICHTIG:
+- Für den PASS-Team-Slot zählt **jeder offensive Team-Fumble** dieses Teams mit -2.
+- Es ist egal, ob der Fumble bei einem Pass-, Sack-, Receiving- oder Laufspielzug entstanden ist.
+- Es ist egal, ob der Fumble verloren oder vom eigenen Team wieder gesichert wurde.
+
 ### Rushing Offense
 
 - Rushing Yards: 1 Punkt je 10 Yards
 - Rushing TD: +6
 - erfolgreiche 2-Point Conversion: +2
 - Fumble: -2
+
+WICHTIG:
+- Für den RUSH-Team-Slot zählt **jeder offensive Team-Fumble** dieses Teams mit -2.
+- PASS und RUSH verwenden damit für den Fumble-Abzug dieselbe Anzahl offensiver Team-Fumbles.
+- Es ist egal, bei welcher offensiven Spielart der Fumble entstanden ist oder ob er verloren wurde.
 
 ### Defense
 
@@ -132,6 +142,7 @@ Ein paralleler Sync während eines API-Deploys ist unerwünscht und wurde entfer
 - eine einzige individuelle Spieler-Punktefunktion ist maßgeblich
 - ausführlicher Berechnungsblock wurde aus der Ligaoberfläche wieder entfernt
 - Spieler-Fumble wurde von "fum_lost" auf jeden Fumble korrigiert
+- PASS und RUSH verwenden beide jeden offensiven Team-Fumble; keine Trennung nach Spielart
 
 ## Aktuelle relevante Commits
 
