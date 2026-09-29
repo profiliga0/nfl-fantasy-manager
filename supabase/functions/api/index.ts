@@ -496,21 +496,20 @@ async function nflverseWeeklyTeamExtras(season:number,week:number){
       if(idx.season_type!=null && String(row[idx.season_type]||'').toUpperCase()!=='REG') continue;
       const code=normalizeNflTeamCode(row[idx.team]);
       if(!code || !TEAM_CODES.includes(code)) continue;
-      // Fumbles must belong to the scoring category in which they happened.
-      // PASS: fumbles on passing plays (QB sacks + receptions after a completed pass).
-      // RUSH: fumbles on rushing plays only. Special-teams fumbles are excluded from both.
-      const passFumbles=num(row,'sack_fumbles')+num(row,'receiving_fumbles');
-      const rushFumbles=num(row,'rushing_fumbles');
+      // League rule: every offensive team fumble costs -2 in both offense slots.
+      // Therefore PASS and RUSH both use the same total number of offensive fumbles.
+      // Lost vs. recovered does not matter.
+      const offensiveFumbles=num(row,'sack_fumbles')+num(row,'rushing_fumbles')+num(row,'receiving_fumbles');
       out[code]={
         pass_yards:num(row,'passing_yards'),
         pass_tds:num(row,'passing_tds'),
         pass_2pt:num(row,'passing_2pt_conversions'),
         pass_int:num(row,'passing_interceptions'),
-        pass_fumbles:passFumbles,
+        pass_fumbles:offensiveFumbles,
         rush_yards:num(row,'rushing_yards'),
         rush_tds:num(row,'rushing_tds'),
         rush_2pt:num(row,'rushing_2pt_conversions'),
-        rush_fumbles:rushFumbles,
+        rush_fumbles:offensiveFumbles,
         rec_yards:num(row,'receiving_yards'),
         rec_tds:num(row,'receiving_tds'),
         def_interceptions:num(row,'def_interceptions'),
@@ -670,8 +669,8 @@ async function syncWeekNow(season:number,week:number){
     ]) team[code][key]=Number(x[key]||0);
   }
 
-  // Category-specific offense fumbles come from nflverse because Sleeper's
-  // generic player/team fumble fields do not identify PASS vs RUSH vs special teams.
+  // The league uses every offensive team fumble for both PASS and RUSH.
+  // nflverse provides the completed-game total without relying on lost-fumble status.
   for(const code of Object.keys(nflverseExtras||{})){
     if(!team[code]) team[code]=teamStatSync();
     const x=nflverseExtras[code]||{};
