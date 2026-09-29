@@ -691,7 +691,20 @@ async function syncWeekNow(season:number,week:number){
     .select('team,pass_yards,pass_tds,pass_fumbles,rush_yards,rush_tds,rush_fumbles,def_points_allowed,def_interceptions,def_fumbles,sacks,safeties,def_tds,pats,fg_0_49,fg_50_plus,return_tds')
     .eq('season',season).eq('week',week).in('team',['SF','IND','SEA','DEN','PHI','BAL']);
   if(verifyError)throw verifyError;
-  return {games:schedRows.length,players:pRows.length,teams:teamRows.length,verification:verify||[]};
+  const fumbleSourceDebug:any={};
+  for(const code of ['SF','SEA','IND','PHI','BAL']){
+    const raw=teamSummary[code]||{};
+    fumbleSourceDebug[code]={
+      fum:statNumSync(raw,'fum'),
+      fum_lost:statNumSync(raw,'fum_lost'),
+      fumbles:statNumSync(raw,'fumbles'),
+      team_fum:statNumSync(raw,'team_fum'),
+      sack_fum:statNumSync(raw,'sack_fum'),
+      rush_fum:statNumSync(raw,'rush_fum'),
+      rec_fum:statNumSync(raw,'rec_fum')
+    };
+  }
+  return {games:schedRows.length,players:pRows.length,teams:teamRows.length,verification:verify||[],fumble_source_debug:fumbleSourceDebug};
 }
 async function syncSeasonWeek(){
   try{
