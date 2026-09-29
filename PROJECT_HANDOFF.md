@@ -82,7 +82,21 @@ WICHTIG:
 - PASS und RUSH verwenden damit für den Fumble-Abzug dieselbe Anzahl offensiver Team-Fumbles.
 - Es ist egal, bei welcher offensiven Spielart der Fumble entstanden ist oder ob er verloren wurde.
 
-### Defense
+#### Verbindliche Fumble-Auslegung für Team-Offense
+
+- PASS und RUSH verwenden beide die **Gesamtzahl aller offensiven Team-Fumbles**.
+- Jeder offensive Fumble zählt -2, auch wenn das eigene Team den Ball wieder sichert.
+- Der Fumble muss nicht aus derselben Spielart stammen: derselbe offensive Team-Fumble-Abzug gilt für PASS und RUSH.
+- **Special-Teams-Fumbles bzw. Muffs zählen nicht** als offensive Team-Fumbles und dürfen PASS/RUSH nicht reduzieren.
+
+Regressionstest Week 3 (2026):
+- San Francisco: 0 offensive Fumbles -> PASS 35,88; RUSH 20,00.
+- Seattle: 2 offensive Fumbles -> PASS 35,72.
+- Indianapolis: 3 offensive Fumbles -> RUSH 2,90.
+- Philadelphia: 1 offensiver Fumble -> RUSH 14,70.
+- Baltimore: 0 offensive Fumbles -> RUSH 31,20.
+
+## Defense
 
 Points Allowed:
 - 0 Punkte erlaubt: 10
