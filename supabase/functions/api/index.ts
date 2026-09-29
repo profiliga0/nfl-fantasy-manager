@@ -615,25 +615,11 @@ async function syncWeekNow(season:number,week:number){
     if(!team[code]) team[code]=teamStatSync();
     const x=nflverseExtras[code]||{};
     for(const key of [
-      'pass_yards','pass_tds','pass_2pt','pass_int',
-      'rush_yards','rush_tds','rush_2pt','rec_yards','rec_tds',
+      'pass_yards','pass_tds','pass_2pt','pass_int','pass_fumbles',
+      'rush_yards','rush_tds','rush_2pt','rush_fumbles','rec_yards','rec_tds',
       'def_interceptions','def_fumbles','sacks','safeties','def_tds',
       'pats','fg_0_49','fg_50_plus','return_tds'
     ]) team[code][key]=Number(x[key]||0);
-  }
-
-  // Team fumbles lost are the opponent's fumble recoveries. This also captures
-  // lost fumbles on returns/special plays that are not classified as rushing,
-  // receiving or sack fumbles in the weekly offensive columns.
-  for(const g of schedRows){
-    const home=normalizeNflTeamCode(g.home);
-    const away=normalizeNflTeamCode(g.away);
-    if(home && away && nflverseExtras?.[home] && nflverseExtras?.[away]){
-      const homeLost=Number(nflverseExtras[away].def_fumbles||0);
-      const awayLost=Number(nflverseExtras[home].def_fumbles||0);
-      if(team[home]){ team[home].pass_fumbles=homeLost; team[home].rush_fumbles=homeLost; }
-      if(team[away]){ team[away].pass_fumbles=awayLost; team[away].rush_fumbles=awayLost; }
-    }
   }
 
   // Points allowed cannot safely default to zero: zero means a real shutout.
