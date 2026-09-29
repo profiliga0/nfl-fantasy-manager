@@ -674,6 +674,19 @@ async function syncWeekNow(season:number,week:number){
     ]) team[code][key]=Number(x[key]||0);
   }
 
+  // Final offensive-team fumble count for both PASS and RUSH.
+  // Use the largest offensive count reported by our complementary sources so
+  // missing classifications do not silently remove a -2 penalty.
+  for(const code of TEAM_CODES){
+    if(!team[code]) continue;
+    const summaryFumbles=Math.max(statNumSync(teamSummary?.[code]||{},'fum'),statNumSync(teamSummary?.[code]||{},'fum_lost'));
+    const playerFumbles=Number(offense?.[code]?.offensive_fumbles||0);
+    const weeklyFumbles=Number(nflverseExtras?.[code]?.pass_fumbles||0);
+    const offensiveFumbles=Math.max(summaryFumbles,playerFumbles,weeklyFumbles);
+    team[code].pass_fumbles=offensiveFumbles;
+    team[code].rush_fumbles=offensiveFumbles;
+  }
+
   // Points allowed cannot safely default to zero: zero means a real shutout.
   // Prefer the completed-game score from nflverse; while a game is live, ESPN is the fallback.
   for(const code of TEAM_CODES){
@@ -691,20 +704,7 @@ async function syncWeekNow(season:number,week:number){
     .select('team,pass_yards,pass_tds,pass_fumbles,rush_yards,rush_tds,rush_fumbles,def_points_allowed,def_interceptions,def_fumbles,sacks,safeties,def_tds,pats,fg_0_49,fg_50_plus,return_tds')
     .eq('season',season).eq('week',week).in('team',['SF','IND','SEA','DEN','PHI','BAL']);
   if(verifyError)throw verifyError;
-  const fumbleSourceDebug:any={};
-  for(const code of ['SF','SEA','IND','PHI','BAL']){
-    const raw=teamSummary[code]||{};
-    fumbleSourceDebug[code]={
-      fum:statNumSync(raw,'fum'),
-      fum_lost:statNumSync(raw,'fum_lost'),
-      fumbles:statNumSync(raw,'fumbles'),
-      team_fum:statNumSync(raw,'team_fum'),
-      sack_fum:statNumSync(raw,'sack_fum'),
-      rush_fum:statNumSync(raw,'rush_fum'),
-      rec_fum:statNumSync(raw,'rec_fum')
-    };
-  }
-  return {games:schedRows.length,players:pRows.length,teams:teamRows.length,verification:verify||[],fumble_source_debug:fumbleSourceDebug};
+  return {games:schedRows.length,players:pRows.length,teams:teamRows.length,verification:verify||[]};
 }
 async function syncSeasonWeek(){
   try{
