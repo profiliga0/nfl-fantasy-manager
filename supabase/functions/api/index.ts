@@ -496,20 +496,22 @@ async function nflverseWeeklyTeamExtras(season:number,week:number){
       if(idx.season_type!=null && String(row[idx.season_type]||'').toUpperCase()!=='REG') continue;
       const code=normalizeNflTeamCode(row[idx.team]);
       if(!code || !TEAM_CODES.includes(code)) continue;
-      // League rule: every offensive team fumble costs -2 in both offense slots.
-      // Therefore PASS and RUSH both use the same total number of offensive fumbles.
-      // Lost vs. recovered does not matter.
-      const offensiveFumbles=num(row,'sack_fumbles')+num(row,'rushing_fumbles')+num(row,'receiving_fumbles');
+      // Fumble penalties belong to the offense category in which the fumble occurred.
+      // PASS: sack/pass-play fumbles and fumbles after a reception.
+      // RUSH: fumbles on rushing attempts only.
+      // League rule: every fumble counts -2, regardless of whether it was lost.
+      const passFumbles=num(row,'sack_fumbles')+num(row,'receiving_fumbles');
+      const rushFumbles=num(row,'rushing_fumbles');
       out[code]={
         pass_yards:num(row,'passing_yards'),
         pass_tds:num(row,'passing_tds'),
         pass_2pt:num(row,'passing_2pt_conversions'),
         pass_int:num(row,'passing_interceptions'),
-        pass_fumbles:offensiveFumbles,
+        pass_fumbles:passFumbles,
         rush_yards:num(row,'rushing_yards'),
         rush_tds:num(row,'rushing_tds'),
         rush_2pt:num(row,'rushing_2pt_conversions'),
-        rush_fumbles:offensiveFumbles,
+        rush_fumbles:rushFumbles,
         rec_yards:num(row,'receiving_yards'),
         rec_tds:num(row,'receiving_tds'),
         def_interceptions:num(row,'def_interceptions'),
@@ -674,8 +676,8 @@ async function syncWeekNow(season:number,week:number){
     ]) team[code][key]=Number(x[key]||0);
   }
 
-  // The league uses every offensive team fumble for both PASS and RUSH.
-  // nflverse provides the completed-game total without relying on lost-fumble status.
+  // Use the categorized team-fumble counts from nflverse so PASS and RUSH
+  // only receive the -2 penalty for fumbles from their own play category.
   for(const code of Object.keys(nflverseExtras||{})){
     if(!team[code]) team[code]=teamStatSync();
     const x=nflverseExtras[code]||{};
