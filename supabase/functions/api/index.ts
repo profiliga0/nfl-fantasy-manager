@@ -496,22 +496,20 @@ async function nflverseWeeklyTeamExtras(season:number,week:number){
       if(idx.season_type!=null && String(row[idx.season_type]||'').toUpperCase()!=='REG') continue;
       const code=normalizeNflTeamCode(row[idx.team]);
       if(!code || !TEAM_CODES.includes(code)) continue;
-      // Fumble penalties belong to the offense category in which the fumble occurred.
-      // PASS: sack/pass-play fumbles and fumbles after a reception.
-      // RUSH: fumbles on rushing attempts only.
-      // League rule: every fumble counts -2, regardless of whether it was lost.
-      const passFumbles=num(row,'sack_fumbles')+num(row,'receiving_fumbles');
-      const rushFumbles=num(row,'rushing_fumbles');
+      // League rule: every offensive team fumble costs -2 in BOTH offense slots.
+      // PASS and RUSH therefore use the same total number of offensive fumbles.
+      // Lost vs. recovered and the play category do not matter.
+      const offensiveFumbles=num(row,'sack_fumbles')+num(row,'rushing_fumbles')+num(row,'receiving_fumbles');
       out[code]={
         pass_yards:num(row,'passing_yards'),
         pass_tds:num(row,'passing_tds'),
         pass_2pt:num(row,'passing_2pt_conversions'),
         pass_int:num(row,'passing_interceptions'),
-        pass_fumbles:passFumbles,
+        pass_fumbles:offensiveFumbles,
         rush_yards:num(row,'rushing_yards'),
         rush_tds:num(row,'rushing_tds'),
         rush_2pt:num(row,'rushing_2pt_conversions'),
-        rush_fumbles:rushFumbles,
+        rush_fumbles:offensiveFumbles,
         rec_yards:num(row,'receiving_yards'),
         rec_tds:num(row,'receiving_tds'),
         def_interceptions:num(row,'def_interceptions'),
@@ -676,15 +674,6 @@ async function syncWeekNow(season:number,week:number){
     ]) team[code][key]=Number(x[key]||0);
   }
 
-  // Use the categorized team-fumble counts from nflverse so PASS and RUSH
-  // only receive the -2 penalty for fumbles from their own play category.
-  for(const code of Object.keys(nflverseExtras||{})){
-    if(!team[code]) team[code]=teamStatSync();
-    const x=nflverseExtras[code]||{};
-    team[code].pass_fumbles=Number(x.pass_fumbles||0);
-    team[code].rush_fumbles=Number(x.rush_fumbles||0);
-  }
-
   // Points allowed cannot safely default to zero: zero means a real shutout.
   // Prefer the completed-game score from nflverse; while a game is live, ESPN is the fallback.
   for(const code of TEAM_CODES){
@@ -700,7 +689,7 @@ async function syncWeekNow(season:number,week:number){
   if(teamRows.length){const {error}=await db.from('weekly_team_stats').upsert(teamRows,{onConflict:'season,week,team'});if(error)throw error;}
   const {data:verify,error:verifyError}=await db.from('weekly_team_stats')
     .select('team,pass_yards,pass_tds,pass_fumbles,rush_yards,rush_tds,rush_fumbles,def_points_allowed,def_interceptions,def_fumbles,sacks,safeties,def_tds,pats,fg_0_49,fg_50_plus,return_tds')
-    .eq('season',season).eq('week',week).in('team',['SF','IND','SEA','DEN']);
+    .eq('season',season).eq('week',week).in('team',['SF','IND','SEA','DEN','PHI','BAL']);
   if(verifyError)throw verifyError;
   return {games:schedRows.length,players:pRows.length,teams:teamRows.length,verification:verify||[]};
 }
