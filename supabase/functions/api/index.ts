@@ -622,11 +622,11 @@ async function syncWeekNow(season:number,week:number){
     const code=normalizeNflTeamCode(p.team||rosterTeam[String(p.player_id)]||'');
     if(!code || !TEAM_CODES.includes(code)) continue;
     if(!p.team) p.team=code;
-    if(!offense[code]) offense[code]={pass_yards:0,pass_tds:0,pass_2pt:0,pass_int:0,pass_fumbles:0,rush_yards:0,rush_tds:0,rush_2pt:0,rush_fumbles:0,rec_yards:0,rec_tds:0};
+    if(!offense[code]) offense[code]={pass_yards:0,pass_tds:0,pass_2pt:0,pass_int:0,pass_fumbles:0,rush_yards:0,rush_tds:0,rush_2pt:0,rush_fumbles:0,rec_yards:0,rec_tds:0,offensive_fumbles:0};
     const o=offense[code], st=p.raw_stats||{};
     o.pass_yards+=statNumSync(st,'pass_yd'); o.pass_tds+=statNumSync(st,'pass_td'); o.pass_2pt+=statNumSync(st,'pass_2pt'); o.pass_int+=statNumSync(st,'pass_int')+statNumSync(st,'int');
     o.rush_yards+=statNumSync(st,'rush_yd'); o.rush_tds+=statNumSync(st,'rush_td'); o.rush_2pt+=statNumSync(st,'rush_2pt');
-    o.rec_yards+=statNumSync(st,'rec_yd'); o.rec_tds+=statNumSync(st,'rec_td');
+    o.rec_yards+=statNumSync(st,'rec_yd'); o.rec_tds+=statNumSync(st,'rec_td'); o.offensive_fumbles+=Math.max(statNumSync(st,'fum'),statNumSync(st,'fum_lost'));
   }
   for(const code of Object.keys(offense)){
     if(!team[code]) team[code]=teamStatSync();
