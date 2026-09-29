@@ -569,7 +569,12 @@ async function syncWeekNow(season:number,week:number){
     return {season,week,game_id:gameId,starts_at:kickoff,home:g.home,away:g.away,status:g.status||null};
   });
   if(schedRows.length){const {error}=await db.from('schedules').upsert(schedRows,{onConflict:'season,game_id'});if(error)throw error;}
-  const stats=await syncFetch([`https://api.sleeper.app/v1/stats/nfl/regular/${season}/${week}`,`https://api.sleeper.com/stats/nfl/${season}/${week}?season_type=regular`]);
+  let stats:any={};
+  try{
+    stats=await syncFetch([`https://api.sleeper.app/v1/stats/nfl/regular/${season}/${week}`,`https://api.sleeper.com/stats/nfl/${season}/${week}?season_type=regular`]);
+  }catch(e){
+    console.warn('Sleeper weekly stats unavailable; keeping existing player stats and syncing team totals from fallbacks.',errorText(e));
+  }
   const [espnDefense,nflverseExtras,nflversePA]=await Promise.all([
     espnTeamDefenseStats(season,week),
     nflverseWeeklyTeamExtras(season,week),
