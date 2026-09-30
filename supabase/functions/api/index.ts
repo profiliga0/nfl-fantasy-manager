@@ -496,20 +496,22 @@ async function nflverseWeeklyTeamExtras(season:number,week:number){
       if(idx.season_type!=null && String(row[idx.season_type]||'').toUpperCase()!=='REG') continue;
       const code=normalizeNflTeamCode(row[idx.team]);
       if(!code || !TEAM_CODES.includes(code)) continue;
-      // League rule: every offensive team fumble costs -2 in BOTH offense slots.
-      // PASS and RUSH therefore use the same total number of offensive fumbles.
-      // Lost vs. recovered and the play category do not matter.
-      const offensiveFumbles=num(row,'sack_fumbles')+num(row,'rushing_fumbles')+num(row,'receiving_fumbles');
+      // Fumbles are slot-specific:
+      // PASS counts fumbles on passing plays (sacks + receptions).
+      // RUSH counts only fumbles on rushing plays.
+      // Every fumble counts, regardless of whether it was lost.
+      const passingFumbles=num(row,'sack_fumbles')+num(row,'receiving_fumbles');
+      const rushingFumbles=num(row,'rushing_fumbles');
       out[code]={
         pass_yards:num(row,'passing_yards'),
         pass_tds:num(row,'passing_tds'),
         pass_2pt:num(row,'passing_2pt_conversions'),
         pass_int:num(row,'passing_interceptions'),
-        pass_fumbles:offensiveFumbles,
+        pass_fumbles:passingFumbles,
         rush_yards:num(row,'rushing_yards'),
         rush_tds:num(row,'rushing_tds'),
         rush_2pt:num(row,'rushing_2pt_conversions'),
-        rush_fumbles:offensiveFumbles,
+        rush_fumbles:rushingFumbles,
         rec_yards:num(row,'receiving_yards'),
         rec_tds:num(row,'receiving_tds'),
         def_interceptions:num(row,'def_interceptions'),
@@ -622,11 +624,11 @@ async function syncWeekNow(season:number,week:number){
     const code=normalizeNflTeamCode(p.team||rosterTeam[String(p.player_id)]||'');
     if(!code || !TEAM_CODES.includes(code)) continue;
     if(!p.team) p.team=code;
-    if(!offense[code]) offense[code]={pass_yards:0,pass_tds:0,pass_2pt:0,pass_int:0,pass_fumbles:0,rush_yards:0,rush_tds:0,rush_2pt:0,rush_fumbles:0,rec_yards:0,rec_tds:0,offensive_fumbles:0};
+    if(!offense[code]) offense[code]={pass_yards:0,pass_tds:0,pass_2pt:0,pass_int:0,pass_fumbles:0,rush_yards:0,rush_tds:0,rush_2pt:0,rush_fumbles:0,rec_yards:0,rec_tds:0};
     const o=offense[code], st=p.raw_stats||{};
     o.pass_yards+=statNumSync(st,'pass_yd'); o.pass_tds+=statNumSync(st,'pass_td'); o.pass_2pt+=statNumSync(st,'pass_2pt'); o.pass_int+=statNumSync(st,'pass_int')+statNumSync(st,'int');
     o.rush_yards+=statNumSync(st,'rush_yd'); o.rush_tds+=statNumSync(st,'rush_td'); o.rush_2pt+=statNumSync(st,'rush_2pt');
-    o.rec_yards+=statNumSync(st,'rec_yd'); o.rec_tds+=statNumSync(st,'rec_td'); o.offensive_fumbles+=Math.max(statNumSync(st,'fum'),statNumSync(st,'fum_lost'));
+    o.rec_yards+=statNumSync(st,'rec_yd'); o.rec_tds+=statNumSync(st,'rec_td');
   }
   for(const code of Object.keys(offense)){
     if(!team[code]) team[code]=teamStatSync();
@@ -672,19 +674,6 @@ async function syncWeekNow(season:number,week:number){
       'def_interceptions','def_fumbles','sacks','safeties','def_tds',
       'pats','fg_0_49','fg_50_plus','return_tds'
     ]) team[code][key]=Number(x[key]||0);
-  }
-
-  // Final offensive-team fumble count for both PASS and RUSH.
-  // Use the largest offensive count reported by our complementary sources so
-  // missing classifications do not silently remove a -2 penalty.
-  for(const code of TEAM_CODES){
-    if(!team[code]) continue;
-    const summaryFumbles=Math.max(statNumSync(teamSummary?.[code]||{},'fum'),statNumSync(teamSummary?.[code]||{},'fum_lost'));
-    const playerFumbles=Number(offense?.[code]?.offensive_fumbles||0);
-    const weeklyFumbles=Number(nflverseExtras?.[code]?.pass_fumbles||0);
-    const offensiveFumbles=Math.max(summaryFumbles,playerFumbles,weeklyFumbles);
-    team[code].pass_fumbles=offensiveFumbles;
-    team[code].rush_fumbles=offensiveFumbles;
   }
 
   // Points allowed cannot safely default to zero: zero means a real shutout.
