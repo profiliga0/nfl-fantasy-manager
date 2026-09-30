@@ -677,6 +677,27 @@ async function syncWeekNow(season:number,week:number){
     ]) team[code][key]=Number(x[key]||0);
   }
 
+  // Canonical league rule: PASS and RUSH both use the SAME total offensive
+  // team-fumble count. nflverse classifies normal offensive fumbles well, while
+  // Sleeper's TEAM row can contain an additional offensive fumble that is not
+  // classified as sack/rush/reception (for example a botched exchange).
+  // Use the larger of those two offensive-team sources. Do not split the count
+  // between PASS and RUSH.
+  for(const code of TEAM_CODES){
+    if(!team[code]) continue;
+    const sleeperTeamFumbles=Math.max(
+      statNumSync(teamSummary?.[code]||{},'fum'),
+      statNumSync(teamSummary?.[code]||{},'fum_lost')
+    );
+    const weeklyOffensiveFumbles=Math.max(
+      Number(nflverseExtras?.[code]?.pass_fumbles||0),
+      Number(nflverseExtras?.[code]?.rush_fumbles||0)
+    );
+    const offensiveFumbles=Math.max(sleeperTeamFumbles,weeklyOffensiveFumbles);
+    team[code].pass_fumbles=offensiveFumbles;
+    team[code].rush_fumbles=offensiveFumbles;
+  }
+
   // Points allowed cannot safely default to zero: zero means a real shutout.
   // Prefer the completed-game score from nflverse; while a game is live, ESPN is the fallback.
   for(const code of TEAM_CODES){
