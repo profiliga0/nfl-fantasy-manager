@@ -156,7 +156,7 @@ Ein paralleler Sync während eines API-Deploys ist unerwünscht und wurde entfer
 - eine einzige individuelle Spieler-Punktefunktion ist maßgeblich
 - ausführlicher Berechnungsblock wurde aus der Ligaoberfläche wieder entfernt
 - Spieler-Fumble wurde von "fum_lost" auf jeden Fumble korrigiert
-- PASS und RUSH verwenden beide jeden offensiven Team-Fumble; keine Trennung nach Spielart
+- PASS und RUSH verwenden getrennte, spielartbezogene Fumbles: PASS = Sack/Receiving, RUSH = Rushing
 
 ## Aktuelle relevante Commits
 
