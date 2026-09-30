@@ -496,22 +496,23 @@ async function nflverseWeeklyTeamExtras(season:number,week:number){
       if(idx.season_type!=null && String(row[idx.season_type]||'').toUpperCase()!=='REG') continue;
       const code=normalizeNflTeamCode(row[idx.team]);
       if(!code || !TEAM_CODES.includes(code)) continue;
-      // Fumbles are slot-specific:
-      // PASS counts fumbles on passing plays (sacks + receptions).
-      // RUSH counts only fumbles on rushing plays.
-      // Every fumble counts, regardless of whether it was lost.
-      const passingFumbles=num(row,'sack_fumbles')+num(row,'receiving_fumbles');
-      const rushingFumbles=num(row,'rushing_fumbles');
+      // League rule: PASS and RUSH both use the SAME total number of offensive
+      // team fumbles. Count every offensive fumble (sack + rushing + receiving),
+      // regardless of whether possession was lost. Special-teams muffs are excluded.
+      const offensiveFumbles=
+        num(row,'sack_fumbles')+
+        num(row,'rushing_fumbles')+
+        num(row,'receiving_fumbles');
       out[code]={
         pass_yards:num(row,'passing_yards'),
         pass_tds:num(row,'passing_tds'),
         pass_2pt:num(row,'passing_2pt_conversions'),
         pass_int:num(row,'passing_interceptions'),
-        pass_fumbles:passingFumbles,
+        pass_fumbles:offensiveFumbles,
         rush_yards:num(row,'rushing_yards'),
         rush_tds:num(row,'rushing_tds'),
         rush_2pt:num(row,'rushing_2pt_conversions'),
-        rush_fumbles:rushingFumbles,
+        rush_fumbles:offensiveFumbles,
         rec_yards:num(row,'receiving_yards'),
         rec_tds:num(row,'receiving_tds'),
         def_interceptions:num(row,'def_interceptions'),
