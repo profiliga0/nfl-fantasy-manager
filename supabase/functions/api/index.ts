@@ -72,22 +72,115 @@ async function seasonContext(){
 function emptyLineup(){ return {QB:null,RB:null,WR:null,PASS:null,RUSH:null,DEF:null,ST:null,captain:null}; }
 function normalizeLineup(x:any){ const l=emptyLineup(); for(const k of ALL_SLOTS) l[k]=x?.[k]||null; l.captain=x?.captain||null; return l; }
 function isComplete(l:any){ return ALL_SLOTS.every(k=>!!l[k]) && ['QB','RB','WR'].includes(l.captain); }
+function lineupFromRow(x:any){
+  return {
+    QB:x?.qb||null,
+    RB:x?.rb||null,
+    WR:x?.wr||null,
+    PASS:x?.pass_team||null,
+    RUSH:x?.rush_team||null,
+    DEF:x?.defense_team||null,
+    ST:x?.st_team||null,
+    captain:x?.captain||null
+  };
+}
+function isCompleteRow(x:any){ return !!x && isComplete(lineupFromRow(x)); }
 
 async function materializeLocks(leagueId:string, season:number, week:number, firstAt:string|null){
   if(!firstAt || new Date(firstAt)>now()) return;
   const {data:managers,error:me}=await db.from('managers').select('id,name').eq('league_id',leagueId).order('created_at',{ascending:true});
   if(me) throw me;
+
   for(const m of managers||[]){
     const {data:existing,error:ee}=await db.from('lineups').select('*').eq('league_id',leagueId).eq('manager_id',m.id).eq('season',season).eq('week',week).maybeSingle();
     if(ee) throw ee;
-    if(existing){ if(!existing.locked_at) await db.from('lineups').update({locked_at:firstAt}).eq('id',existing.id); continue; }
+
+    // A complete row is already a valid submitted or previously auto-copied lineup.
+    // Only incomplete/missing rows must inherit the last valid lineup.
+    if(isCompleteRow(existing)){
+      if(!existing.locked_at){
+        const {error}=await db.from('lineups').update({locked_at:firstAt}).eq('id',existing.id);
+        if(error) throw error;
+      }
+      continue;
+    }
+
     let source:any=null;
     if(week>1){
-      const {data:prev}=await db.from('lineups').select('*').eq('league_id',leagueId).eq('manager_id',m.id).eq('season',season).lt('week',week).order('week',{ascending:false}).limit(1).maybeSingle();
-      source=prev;
+      const {data:previous,error:pe}=await db.from('lineups')
+        .select('*')
+        .eq('league_id',leagueId)
+        .eq('manager_id',m.id)
+        .eq('season',season)
+        .lt('week',week)
+        .order('week',{ascending:false})
+        .limit(32);
+      if(pe) throw pe;
+      source=(previous||[]).find((row:any)=>isCompleteRow(row))||null;
     }
-    const l=source ? normalizeLineup(source) : emptyLineup();
-    await db.from('lineups').upsert({league_id:leagueId,manager_id:m.id,season,week,qb:l.QB,rb:l.RB,wr:l.WR,pass_team:l.PASS,rush_team:l.RUSH,defense_team:l.DEF,st_team:l.ST,captain:l.captain,submitted_at:null,auto_copied:!!source,locked_at:firstAt},{onConflict:'league_id,manager_id,season,week'});
+
+    if(source){
+      const l=lineupFromRow(source);
+      const row={
+        league_id:leagueId,manager_id:m.id,season,week,
+        qb:l.QB,rb:l.RB,wr:l.WR,
+        pass_team:l.PASS,rush_team:l.RUSH,defense_team:l.DEF,st_team:l.ST,
+        captain:l.captain,
+        submitted_at:null,
+        auto_copied:true,
+        locked_at:firstAt
+      };
+      if(existing){
+        const {error}=await db.from('lineups').update(row).eq('id',existing.id);
+        if(error) throw error;
+      }else{
+        const {error}=await db.from('lineups').insert(row);
+        if(error) throw error;
+      }
+      continue;
+    }
+
+    // Week 1 (or a manager without any prior valid lineup): keep/create an empty
+    // locked row. There is legitimately nothing that can be carried forward.
+    if(existing){
+      if(!existing.locked_at){
+        const {error}=await db.from('lineups').update({locked_at:firstAt}).eq('id',existing.id);
+        if(error) throw error;
+      }
+    }else{
+      const l=emptyLineup();
+      const {error}=await db.from('lineups').insert({
+        league_id:leagueId,manager_id:m.id,season,week,
+        qb:l.QB,rb:l.RB,wr:l.WR,
+        pass_team:l.PASS,rush_team:l.RUSH,defense_team:l.DEF,st_team:l.ST,
+        captain:l.captain,
+        submitted_at:null,
+        auto_copied:false,
+        locked_at:firstAt
+      });
+      if(error) throw error;
+    }
+  }
+}
+
+async function materializeStartedWeeks(leagueId:string,season:number,throughWeek:number){
+  const {data:games,error}=await db.from('schedules')
+    .select('week,starts_at')
+    .eq('season',season)
+    .lte('week',throughWeek)
+    .order('week',{ascending:true})
+    .order('starts_at',{ascending:true});
+  if(error) throw error;
+
+  const firstByWeek=new Map<number,string>();
+  for(const g of games||[]){
+    const w=Number(g.week);
+    if(!Number.isInteger(w) || w<1 || !g.starts_at || firstByWeek.has(w)) continue;
+    firstByWeek.set(w,g.starts_at);
+  }
+
+  for(const [w,firstAt] of firstByWeek){
+    if(new Date(firstAt)<=now()) await materializeLocks(leagueId,season,w,firstAt);
   }
 }
 
@@ -211,7 +304,7 @@ async function getLeagueState(manager:any){
   const week=ctx.week;
   const firstAt=await firstGameAt(ctx.season,week);
   const locked=!!firstAt && new Date(firstAt)<=now();
-  await materializeLocks(leagueId,ctx.season,week,firstAt);
+  await materializeStartedWeeks(leagueId,ctx.season,week);
   if(locked) await refreshLiveStatsIfDue(ctx.season,week);
 
   const {data:managers}=await db.from('managers').select('id,name').eq('league_id',leagueId).order('created_at',{ascending:true});
@@ -252,6 +345,10 @@ async function getLeagueHistoryWeek(manager:any,requestedWeek:any){
   if(!Number.isInteger(week) || week<1 || week>=ctx.week) throw new Error('Nur vergangene Spieltage können angezeigt werden.');
 
   const leagueId=manager.league_id;
+  // Repair/materialize every started week up to the requested historical week.
+  // This makes missed carry-forwards deterministic even if nobody opened the app
+  // exactly when that gameweek locked.
+  await materializeStartedWeeks(leagueId,ctx.season,week);
   const {data:managers,error:me}=await db.from('managers').select('id,name').eq('league_id',leagueId).order('created_at',{ascending:true});
   if(me) throw me;
   const {data:weekLineups,error:le}=await db.from('lineups').select('*').eq('league_id',leagueId).eq('season',ctx.season).eq('week',week);
@@ -261,7 +358,7 @@ async function getLeagueHistoryWeek(manager:any,requestedWeek:any){
   const lineups:any[]=[];
   for(const m of managers||[]){
     const l=byManager[m.id]||null;
-    if(!l){
+    if(!l || !isCompleteRow(l)){
       lineups.push({name:m.name,has_lineup:false,points:0,details:{},display:null,auto_copied:false});
       continue;
     }
