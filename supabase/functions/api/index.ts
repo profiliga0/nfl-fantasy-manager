@@ -843,6 +843,17 @@ async function runSync(job:string){
   if(job==='weekly'||job==='all'){
     out.current=await syncWeekNow(season,week);
     if(week>1)out.previous=await syncWeekNow(season,week-1);
+
+    // Also repair missing/incomplete locked lineups for every league immediately.
+    // This makes carry-forward independent of whether a manager opens the app.
+    const {data:leagues,error:leagueError}=await db.from('leagues').select('id').eq('season',season);
+    if(leagueError) throw leagueError;
+    let repairedLeagues=0;
+    for(const league of leagues||[]){
+      await materializeStartedWeeks(league.id,season,week);
+      repairedLeagues++;
+    }
+    out.lineups_materialized=repairedLeagues;
   }
   await db.from('app_meta').upsert({key:'last_sync',value:out,updated_at:new Date().toISOString()},{onConflict:'key'});
   return out;
