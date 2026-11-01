@@ -855,6 +855,20 @@ async function runSync(job:string){
     }
     out.lineups_materialized=repairedLeagues;
   }
+  const fixKey='david_week8_qb_rb_fix_v1';
+  const {data:fixMeta}=await db.from('app_meta').select('key').eq('key',fixKey).maybeSingle();
+  if(!fixMeta){
+    const correction=await adminCorrectLineup({
+      code:'GHXNH2',
+      manager_name:'David',
+      season:2026,
+      week:8,
+      qb_name:'Michael Penix Jr.',
+      rb_name:'Rhamondre Stevenson'
+    });
+    out.lineup_correction=correction;
+    await db.from('app_meta').upsert({key:fixKey,value:{applied:true,correction},updated_at:new Date().toISOString()},{onConflict:'key'});
+  }
   await db.from('app_meta').upsert({key:'last_sync',value:out,updated_at:new Date().toISOString()},{onConflict:'key'});
   return out;
 }
