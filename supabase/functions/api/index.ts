@@ -859,6 +859,47 @@ async function runSync(job:string){
   return out;
 }
 
+async function adminCorrectLineup(body:any){
+  const code=cleanCode(body.code);
+  const managerName=cleanName(body.manager_name);
+  const season=Number(body.season);
+  const week=Number(body.week);
+  const qbName=cleanName(body.qb_name);
+  const rbName=cleanName(body.rb_name);
+  if(!code||!managerName||!season||!week||!qbName||!rbName) throw new Error('Korrekturdaten unvollständig.');
+
+  const {data:league,error:le}=await db.from('leagues').select('id,code,name,season').eq('code',code).maybeSingle();
+  if(le) throw le; if(!league) throw new Error('Liga nicht gefunden.');
+  const {data:manager,error:me}=await db.from('managers').select('id,name').eq('league_id',league.id).eq('name',managerName).maybeSingle();
+  if(me) throw me; if(!manager) throw new Error('Manager nicht gefunden.');
+
+  const {data:players,error:pe}=await db.from('players').select('player_id,name,position,team').in('name',[qbName,rbName]);
+  if(pe) throw pe;
+  const qb=(players||[]).find((p:any)=>p.name===qbName && p.position==='QB');
+  const rb=(players||[]).find((p:any)=>p.name===rbName && p.position==='RB');
+  if(!qb) throw new Error('Quarterback nicht gefunden: '+qbName);
+  if(!rb) throw new Error('Running Back nicht gefunden: '+rbName);
+
+  const {data:before,error:be}=await db.from('lineups').select('*').eq('league_id',league.id).eq('manager_id',manager.id).eq('season',season).eq('week',week).maybeSingle();
+  if(be) throw be; if(!before) throw new Error('Aufstellung nicht gefunden.');
+
+  const {error:ue}=await db.from('lineups').update({qb:qb.player_id,rb:rb.player_id}).eq('id',before.id);
+  if(ue) throw ue;
+
+  const {data:after,error:ae}=await db.from('lineups').select('*').eq('id',before.id).single();
+  if(ae) throw ae;
+  return {
+    league:{code:league.code,name:league.name},
+    manager:manager.name,season,week,
+    changed:{qb:{name:qb.name,team:qb.team,id:qb.player_id},rb:{name:rb.name,team:rb.team,id:rb.player_id}},
+    preserved:{
+      wr:after.wr,pass_team:after.pass_team,rush_team:after.rush_team,
+      defense_team:after.defense_team,st_team:after.st_team,captain:after.captain,
+      submitted_at:after.submitted_at,auto_copied:after.auto_copied,locked_at:after.locked_at
+    }
+  };
+}
+
 Deno.serve(async (req) => {
   if(req.method==='OPTIONS') return new Response('ok',{headers});
   try{
@@ -866,7 +907,12 @@ Deno.serve(async (req) => {
     if(action==='create_league') return json({ok:true,...await createLeague(body)});
     if(action==='join_league') return json({ok:true,...await joinLeague(body)});
     if(action==='login') return json({ok:true,...await login(body)});
-    if(action==='sync'){ const secret=Deno.env.get('SYNC_SECRET')||''; if(!secret || (req.headers.get('x-sync-secret')||'')!==secret) return err('Nicht autorisiert.',401); return json({ok:true,result:await runSync(String(body.job||'weekly'))}); }
+    if(action==='sync' || action==='admin_correct_lineup'){
+      const secret=Deno.env.get('SYNC_SECRET')||'';
+      if(!secret || (req.headers.get('x-sync-secret')||'')!==secret) return err('Nicht autorisiert.',401);
+      if(action==='admin_correct_lineup') return json({ok:true,result:await adminCorrectLineup(body)});
+      return json({ok:true,result:await runSync(String(body.job||'weekly'))});
+    }
     const manager=await getSession(String(body.token||''));
     if(action==='state') return json({ok:true,state:await getLeagueState(manager)});
     if(action==='history_week') return json({ok:true,history:await getLeagueHistoryWeek(manager,body.week)});
