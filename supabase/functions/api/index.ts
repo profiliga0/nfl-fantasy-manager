@@ -864,7 +864,9 @@ async function runSync(job:string){
       season:2026,
       week:8,
       qb_name:'Michael Penix Jr.',
-      rb_name:'Rhamondre Stevenson'
+      qb_team:'ATL',
+      rb_name:'Rhamondre Stevenson',
+      rb_team:'NE'
     });
     out.lineup_correction=correction;
     await db.from('app_meta').upsert({key:fixKey,value:{applied:true,correction},updated_at:new Date().toISOString()},{onConflict:'key'});
@@ -887,12 +889,18 @@ async function adminCorrectLineup(body:any){
   const {data:manager,error:me}=await db.from('managers').select('id,name').eq('league_id',league.id).eq('name',managerName).maybeSingle();
   if(me) throw me; if(!manager) throw new Error('Manager nicht gefunden.');
 
-  const {data:players,error:pe}=await db.from('players').select('player_id,name,position,team').in('name',[qbName,rbName]);
-  if(pe) throw pe;
-  const qb=(players||[]).find((p:any)=>p.name===qbName && p.position==='QB');
-  const rb=(players||[]).find((p:any)=>p.name===rbName && p.position==='RB');
-  if(!qb) throw new Error('Quarterback nicht gefunden: '+qbName);
-  if(!rb) throw new Error('Running Back nicht gefunden: '+rbName);
+  const qbTeam=normalizeNflTeamCode(body.qb_team||'');
+  const rbTeam=normalizeNflTeamCode(body.rb_team||'');
+  const qbBase=qbName.replace(/\s+Jr\.?$/i,'').trim();
+  const rbBase=rbName.replace(/\s+Jr\.?$/i,'').trim();
+  const {data:qbs,error:qbe}=await db.from('players').select('player_id,name,position,team').eq('position','QB').eq('team',qbTeam).ilike('name',qbBase+'%').limit(5);
+  if(qbe) throw qbe;
+  const {data:rbs,error:rbe}=await db.from('players').select('player_id,name,position,team').eq('position','RB').eq('team',rbTeam).ilike('name',rbBase+'%').limit(5);
+  if(rbe) throw rbe;
+  const qb=(qbs||[])[0];
+  const rb=(rbs||[])[0];
+  if(!qb) throw new Error('Quarterback nicht gefunden: '+qbName+' ('+qbTeam+')');
+  if(!rb) throw new Error('Running Back nicht gefunden: '+rbName+' ('+rbTeam+')');
 
   const {data:before,error:be}=await db.from('lineups').select('*').eq('league_id',league.id).eq('manager_id',manager.id).eq('season',season).eq('week',week).maybeSingle();
   if(be) throw be; if(!before) throw new Error('Aufstellung nicht gefunden.');
